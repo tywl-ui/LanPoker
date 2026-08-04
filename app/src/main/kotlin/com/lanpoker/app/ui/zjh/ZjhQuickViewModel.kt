@@ -61,20 +61,21 @@ class ZjhQuickViewModel(
         )
     }
 
-    /** 真人选择：闷/看 */
+    /** 真人选择：闷/看（看牌先展示自己的牌 1.8 秒，再真正落注并轮到下家） */
     fun choose(looked: Boolean) {
         val chooser = state.game.currentChooser ?: return
         if (chooser.id in aiIds) return
-        if (!state.game.choose(chooser.id, looked)) return
         if (looked) {
-            // 看牌：先展示自己的牌 1.8 秒，再继续
             state = state.copy(showMyCards = true)
             viewModelScope.launch {
                 delay(1800)
                 state = state.copy(showMyCards = false)
+                if (state.game.allChosen) return@launch
+                if (!state.game.choose(chooser.id, true)) return@launch
                 afterChoose()
             }
         } else {
+            if (!state.game.choose(chooser.id, false)) return
             afterChoose()
         }
     }

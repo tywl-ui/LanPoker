@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -124,6 +127,7 @@ fun ZjhQuickScreen(
 
             QuickActionBar(
                 state = state,
+                aiIds = aiIds,
                 onChoose = viewModel::choose,
             )
         }
@@ -142,9 +146,12 @@ private fun QuickTable(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val w = maxWidth
         val h = maxHeight
-        val seatW = 116.dp
-        val seatH = 160.dp
-        val order = players.sortedBy { it.id == chooser?.id } // chooser 在最后（底部）
+        val compact = w < 400.dp
+        val seatW = if (compact) 100.dp else 116.dp
+        val seatH = if (compact) 150.dp else 160.dp
+        val cardW = if (compact) 30.dp else 36.dp
+        val cardH = if (compact) 42.dp else 50.dp
+        val overlap = if (compact) (-12).dp else (-14).dp
 
         players.forEach { p ->
             val slotIndex = if (p.id == chooser?.id) 0 else {
@@ -159,6 +166,9 @@ private fun QuickTable(
                 game = game,
                 isChooser = p.id == chooser?.id,
                 showCards = p.id == chooser?.id && showMyCards,
+                cardW = cardW,
+                cardH = cardH,
+                overlap = overlap,
                 modifier = Modifier.offset(x = x, y = y),
             )
         }
@@ -182,6 +192,9 @@ private fun QuickSeat(
     game: ZjhQuickGame,
     isChooser: Boolean,
     showCards: Boolean,
+    cardW: Dp,
+    cardH: Dp,
+    overlap: Dp,
     modifier: Modifier = Modifier,
 ) {
     val gs = game.state
@@ -199,10 +212,11 @@ private fun QuickSeat(
         Spacer(Modifier.height(4.dp))
         Row {
             hand.forEachIndexed { i, card ->
+                val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
                 if (showCards) {
-                    CardFront(card = card, width = 36.dp, height = 50.dp, modifier = Modifier.offset(x = if (i == 0) 0.dp else (-14).dp))
+                    CardFront(card = card, width = cardW, height = cardH, modifier = m)
                 } else {
-                    CardBack(width = 36.dp, height = 50.dp, modifier = Modifier.offset(x = if (i == 0) 0.dp else (-14).dp))
+                    CardBack(width = cardW, height = cardH, modifier = m)
                 }
             }
         }
@@ -221,9 +235,11 @@ private fun QuickSeat(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickActionBar(
     state: QuickUiState,
+    aiIds: Set<Int>,
     onChoose: (Boolean) -> Unit,
 ) {
     val chooser = state.game.currentChooser
@@ -236,7 +252,12 @@ private fun QuickActionBar(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 chooser == null -> Text("开牌中…", color = Color.White)
-                state.aiThinking -> Text(
+                state.showMyCards -> Text(
+                    "看牌中…（牌展示给你看，稍后自动传给下一位）",
+                    color = Gold,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                chooser.id in aiIds -> Text(
                     "${chooser.name} 思考中…",
                     color = Gold,
                     style = MaterialTheme.typography.titleSmall,
@@ -248,7 +269,11 @@ private fun QuickActionBar(
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         Button(
                             onClick = { onChoose(false) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),

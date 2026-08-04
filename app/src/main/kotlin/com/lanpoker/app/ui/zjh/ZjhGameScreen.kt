@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +45,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -156,6 +159,7 @@ fun ZjhGameScreen(
             ActionBar(
                 state = state,
                 players = viewModel.players,
+                aiIds = aiIds,
                 showMyCards = state.showMyCards,
                 onLook = viewModel::look,
                 onHide = viewModel::hideCards,
@@ -183,8 +187,12 @@ private fun TableArea(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val w = maxWidth
         val h = maxHeight
-        val seatW = 116.dp
-        val seatH = 170.dp
+        val compact = w < 400.dp
+        val seatW = if (compact) 100.dp else 116.dp
+        val seatH = if (compact) 160.dp else 170.dp
+        val cardW = if (compact) 30.dp else 36.dp
+        val cardH = if (compact) 42.dp else 50.dp
+        val overlap = if (compact) (-12).dp else (-14).dp
 
         players.forEach { p ->
             val slotIndex = if (p.id == actor) 0 else others.indexOf(p) + 1
@@ -196,6 +204,9 @@ private fun TableArea(
                 game = game,
                 isTurn = p.id == actor && !gs.over,
                 showCards = p.id == actor && showMyCards,
+                cardW = cardW,
+                cardH = cardH,
+                overlap = overlap,
                 modifier = Modifier.offset(x = x, y = y),
             )
         }
@@ -237,6 +248,9 @@ private fun Seat(
     game: ZjhBettingGame,
     isTurn: Boolean,
     showCards: Boolean,
+    cardW: Dp,
+    cardH: Dp,
+    overlap: Dp,
     modifier: Modifier = Modifier,
 ) {
     val gs = game.state
@@ -256,11 +270,11 @@ private fun Seat(
         Spacer(Modifier.height(4.dp))
         Row {
             hand.forEachIndexed { i, card ->
-                val m = Modifier.offset(x = if (i == 0) 0.dp else (-14).dp)
+                val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
                 if (showCards && !folded) {
-                    CardFront(card = card, width = 36.dp, height = 50.dp, modifier = m)
+                    CardFront(card = card, width = cardW, height = cardH, modifier = m)
                 } else {
-                    CardBack(width = 36.dp, height = 50.dp, dimmed = folded, modifier = m)
+                    CardBack(width = cardW, height = cardH, dimmed = folded, modifier = m)
                 }
             }
         }
@@ -298,10 +312,12 @@ private fun Seat(
 
 // ---------- 底部操作栏 ----------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ActionBar(
     state: UiState,
     players: List<Player>,
+    aiIds: Set<Int>,
     showMyCards: Boolean,
     onLook: () -> Unit,
     onHide: () -> Unit,
@@ -316,7 +332,7 @@ private fun ActionBar(
     Surface(color = Color(0xFF0B3D24), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             if (state.phase == Phase.BETTING && actor != null) {
-                if (state.aiThinking) {
+                if (actor.id in aiIds) {
                     Text(
                         "${actor.name} 思考中…",
                         color = Gold,
@@ -332,9 +348,17 @@ private fun ActionBar(
                         color = Color.White,
                         style = MaterialTheme.typography.titleSmall,
                     )
+                    if (needPay) {
+                        Text(
+                            "已投 $stake · 还需 ${req * state.game.base - stake} 分",
+                            color = Gold,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
-                    Row(
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         if (!looked) {
@@ -346,7 +370,6 @@ private fun ActionBar(
                         Button(
                             onClick = onCall,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                            modifier = Modifier.weight(1f),
                         ) {
                             Text(if (needPay) "跟注 ${req}底" else "过")
                         }

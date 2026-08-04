@@ -1,5 +1,7 @@
 package com.lanpoker.app.ui.config
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,12 +12,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -91,14 +95,30 @@ fun ConfigScreen(
         Text("模式", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         GameMode.values().forEach { m ->
-            FilterChip(
-                selected = mode == m,
-                onClick = { mode = m },
-                label = { Text("${m.label} · ${m.desc}") },
+            val selected = mode == m
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outlineVariant,
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 2.dp),
-            )
+                    .padding(vertical = 3.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .clickable { mode = m }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Text(m.label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Text(m.desc, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
 
         Spacer(Modifier.height(20.dp))
