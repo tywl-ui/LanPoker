@@ -97,8 +97,18 @@ fun ZjhGameScreen(
         )
     }
     if (showCompare && state.phase == Phase.BETTING) {
+        val active = viewModel.players.count { it.id !in game.state.folded }
+        val eligible = if (active > 2) {
+            // 三家以上只能与已看牌的玩家比牌
+            viewModel.players.filter {
+                it.id != game.state.turn && it.id !in game.state.folded && it.id in game.state.looked
+            }
+        } else {
+            viewModel.players.filter { it.id != game.state.turn && it.id !in game.state.folded }
+        }
         CompareDialog(
-            targets = viewModel.players.filter { it.id != game.state.turn && it.id !in game.state.folded },
+            targets = eligible,
+            hint = if (active > 2) "三家以上只能和已看牌的玩家比牌" else "仅剩两家，可与任何对手开牌",
             onPick = { viewModel.compare(it); showCompare = false },
             onDismiss = { showCompare = false },
         )
@@ -515,6 +525,7 @@ private fun RaiseDialog(
 @Composable
 private fun CompareDialog(
     targets: List<Player>,
+    hint: String,
     onPick: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -523,6 +534,12 @@ private fun CompareDialog(
         title = { Text("和谁比牌？") },
         text = {
             Column {
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
                 if (targets.isEmpty()) Text("没有可比的玩家")
                 targets.forEach { p ->
                     Button(

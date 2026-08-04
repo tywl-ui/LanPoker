@@ -353,7 +353,7 @@ private fun QuickSettledPanel(
         Spacer(Modifier.height(12.dp))
         Surface(color = Color(0xFFF1F8E9), shape = RoundedCornerShape(8.dp)) {
             Text(
-                "总分：" + players.joinToString("  ") { "${it.name} ${signed(result.deltas[it.id] ?: 0)}" },
+                "总分：" + players.joinToString("  ") { "${it.name} ${signed(state.scores[it.id] ?: 0)}" },
                 modifier = Modifier.padding(8.dp),
                 style = MaterialTheme.typography.bodyMedium,
             )

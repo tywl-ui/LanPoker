@@ -38,7 +38,7 @@ class ZjhBettingGame(
     }
 
     private var _state = State(
-        stakes = players.associate { it.id to 0 },
+        stakes = players.associate { it.id to base },  // 底注：开局每人自动下 1 底
         level = 1,
         looked = emptySet(),
         folded = emptySet(),
@@ -46,7 +46,7 @@ class ZjhBettingGame(
         over = false,
         winnerId = null,
         winnerLabel = null,
-        lastAction = "${players.first().name} 先下注",
+        lastAction = "${players.first().name} 先下注（底注每人 $base 分）",
     )
 
     val state: State get() = _state
@@ -117,10 +117,15 @@ class ZjhBettingGame(
         return true
     }
 
-    /** 比牌：与 target 比大小，输者弃牌；平局发起者输 */
+    /**
+     * 比牌：与 target 比大小，输者弃牌；平局发起者输。
+     * 规则：三家以上时只能和【已看牌】的玩家比牌，不能和闷牌的比；
+     * 仅剩两家时，看牌/闷牌双方可以互相开牌。
+     */
     fun compare(targetId: Int): Boolean {
         val id = _state.turn
         if (_state.over || id in _state.folded || targetId == id || targetId in _state.folded) return false
+        if (activeCount() > 2 && targetId !in _state.looked) return false
         val fee = requiredBase(id) * base
         val challengerLoses = ZjhEvaluator.compare(evaluated.getValue(id), evaluated.getValue(targetId)) <= 0
         val loser = if (challengerLoses) id else targetId
@@ -128,7 +133,7 @@ class ZjhBettingGame(
         _state = _state.copy(
             stakes = newStakes,
             folded = _state.folded + loser,
-            lastAction = "${name(id)} 与 ${name(targetId)} 比牌，${name(loser)} 输",
+            lastAction = "${name(id)} 与 ${name(targetId)} 比牌，${name(loser)} 输（${handLabel(loser)}）",
         )
         if (activeCount() == 1) finish() else advance()
         return true

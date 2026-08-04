@@ -24,11 +24,18 @@ class ZjhBettingGameTest {
     ) = ZjhBettingGame(players, hands, base)
 
     @Test
-    fun 闷牌跟注下1底() {
+    fun 开局每人自动下底注() {
         val g = game(base = 2)
-        g.call()
+        assertEquals(mapOf(1 to 2, 2 to 2, 3 to 2), g.state.stakes)
+    }
+
+    @Test
+    fun 闷牌跟注与底注齐平视为过() {
+        val g = game(base = 2)
+        g.call() // 闷跟 req=2，已投2 → 过
         assertEquals(2, g.state.stakes[1])
-        assertEquals(2, g.state.turn) // 轮到下家
+        assertEquals(2, g.state.turn)
+        assertTrue(g.state.lastAction!!.contains("过"))
     }
 
     @Test
@@ -85,7 +92,7 @@ class ZjhBettingGameTest {
     @Test
     fun 弃牌跳过() {
         val g = game()
-        g.call() // 甲跟
+        g.call() // 甲过
         g.fold() // 乙弃
         assertEquals(3, g.state.turn) // 跳过乙直接到丙
     }
@@ -93,21 +100,22 @@ class ZjhBettingGameTest {
     @Test
     fun 两人时一人弃牌即结束() {
         val g = game(players = listOf(Player(1, "甲"), Player(2, "乙")))
-        g.call()      // 甲跟1底
-        g.call()      // 乙跟1底
-        g.fold()      // 甲弃
+        g.call()      // 甲过
+        g.fold()      // 乙弃（底注留下）
         assertTrue(g.state.over)
-        assertEquals(2, g.state.winnerId)
-        assertEquals(mapOf(1 to -1, 2 to 1), g.settlementDeltas())
+        assertEquals(1, g.state.winnerId)
+        assertEquals(mapOf(1 to 1, 2 to -1), g.settlementDeltas())
     }
 
     @Test
     fun 比牌赢家留下() {
         val g = game()
-        g.call() // 甲跟(单张A,9,K)
-        g.call() // 乙跟(对K)
-        g.call() // 丙跟(顺子)
-        g.compare(3) // 甲与丙比，丙顺子赢，甲弃
+        g.call() // 甲过
+        g.look() // 乙看牌
+        g.call() // 乙看跟 2底
+        g.look() // 丙看牌
+        g.call() // 丙看跟 2底
+        g.compare(3) // 甲与丙比（丙已看牌，合法），丙顺子赢，甲弃
         assertTrue(1 in g.state.folded)
         assertEquals(2, g.state.turn) // 轮到乙
     }
@@ -115,10 +123,11 @@ class ZjhBettingGameTest {
     @Test
     fun 比牌输者弃() {
         val g = game()
-        g.call() // 甲跟
-        g.call() // 乙跟
-        g.call() // 丙跟
-        g.compare(2) // 甲与乙比，乙对K 赢甲单张A
+        g.call()
+        g.look() // 乙看牌
+        g.call() // 乙看跟
+        g.call() // 丙过
+        g.compare(2) // 甲与乙比（乙已看牌，合法），乙对K 赢甲单张A
         assertTrue(1 in g.state.folded)
         assertEquals(2, g.state.turn)
     }
@@ -133,8 +142,9 @@ class ZjhBettingGameTest {
             ),
         )
         g.call()
-        g.call()
-        g.call()
+        g.look() // 乙看牌
+        g.call() // 乙看跟
+        g.call() // 丙过
         g.compare(2) // 甲与乙对K平局 → 甲输
         assertTrue(1 in g.state.folded)
         assertFalse(2 in g.state.folded)
@@ -143,9 +153,10 @@ class ZjhBettingGameTest {
     @Test
     fun 比牌收比牌费() {
         val g = game()
-        g.call()      // 甲跟
-        g.call()      // 乙跟
-        g.call()      // 丙跟
+        g.call()      // 甲过
+        g.look()      // 乙看牌
+        g.call()      // 乙看跟 2底
+        g.call()      // 丙过
         g.compare(2)  // 甲(闷)比牌费1底，甲输
         assertEquals(2, g.state.stakes[1])
         assertFalse(g.state.over)
@@ -155,16 +166,54 @@ class ZjhBettingGameTest {
     }
 
     @Test
+    fun 三家以上不能与闷牌者比牌() {
+        val g = game()
+        g.call() // 甲过
+        g.call() // 乙过
+        g.call() // 丙过
+        // 三家都在，乙、丙都是闷牌 → 比牌被拒
+        assertFalse(g.compare(2))
+        assertFalse(g.compare(3))
+        assertEquals(0, g.state.folded.size)
+    }
+
+    @Test
+    fun 三家以上可与看牌者比牌() {
+        val g = game()
+        g.call()      // 甲过
+        g.look()      // 乙看牌
+        g.call()      // 乙看跟 2底
+        g.call()      // 丙过
+        // 轮到甲，三家在场，乙已看牌 → 允许
+        assertTrue(g.compare(2))
+        assertTrue(1 in g.state.folded) // 甲单张A 输给 乙对K
+    }
+
+    @Test
+    fun 仅剩两家可与闷牌者开牌() {
+        val g = game()
+        g.call() // 甲过
+        g.call() // 乙过
+        g.call() // 丙过
+        g.fold() // 甲弃 → 剩乙、丙
+        // 乙与闷牌的丙比牌（两家时可以开闷牌）
+        assertTrue(g.compare(3))
+        assertTrue(2 in g.state.folded) // 乙对K 输给 丙顺子
+        assertTrue(g.state.over)
+        assertEquals(3, g.state.winnerId)
+    }
+
+    @Test
     fun 结算为零和() {
         val g = game()
         g.raise(3)    // 甲3
         g.call()      // 乙3
-        g.fold()      // 丙弃
+        g.fold()      // 丙弃（底注1留下）
         g.fold()      // 甲弃
         assertTrue(g.state.over)
         val deltas = g.settlementDeltas()
         assertEquals(0, deltas.values.sum())
-        assertEquals(mapOf(1 to -3, 2 to 3, 3 to 0), deltas)
+        assertEquals(mapOf(1 to -3, 2 to 4, 3 to -1), deltas)
     }
 
     @Test
@@ -172,7 +221,7 @@ class ZjhBettingGameTest {
         val g = game(base = 2)
         g.raise(2) // 甲4
         g.call()   // 乙4
-        g.fold()   // 丙0
-        assertEquals(8, g.pot())
+        g.fold()   // 丙底注2留下
+        assertEquals(10, g.pot())
     }
 }

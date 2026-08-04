@@ -32,7 +32,7 @@ class AiEngine(
             prompt = buildBettingPrompt(hand, gs, myId, players, base),
         )
         val parsed = llm.parseDecision(answer)
-        if (parsed == null || !validate(parsed, gs, myId, maxLevel)) return heuristic
+        if (parsed == null || !validate(parsed, gs, myId, maxLevel, players)) return heuristic
         return parsed
     }
 
@@ -49,17 +49,20 @@ class AiEngine(
         return parsed ?: heuristic
     }
 
-    private fun validate(d: AiDecision, gs: ZjhBettingGame.State, myId: Int, maxLevel: Int): Boolean {
+    private fun validate(d: AiDecision, gs: ZjhBettingGame.State, myId: Int, maxLevel: Int, players: List<com.lanpoker.core.ledger.Player>): Boolean {
         val id = myId
         if (id in gs.folded) return false
         val level = d.level
         val target = d.targetId
+        val activeCount = players.count { it.id !in gs.folded }
         return when (d.action) {
             com.lanpoker.core.ai.AiActionType.LOOK -> id !in gs.looked
             com.lanpoker.core.ai.AiActionType.CALL -> true
             com.lanpoker.core.ai.AiActionType.RAISE -> level != null && level > gs.level && level <= maxLevel
             com.lanpoker.core.ai.AiActionType.FOLD -> true
-            com.lanpoker.core.ai.AiActionType.COMPARE -> target != null && target != id && target !in gs.folded
+            com.lanpoker.core.ai.AiActionType.COMPARE ->
+                target != null && target != id && target !in gs.folded &&
+                    (activeCount <= 2 || target in gs.looked)
         }
     }
 
