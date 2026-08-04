@@ -141,6 +141,22 @@ fun ConfigScreen(
         )
 
         Spacer(Modifier.height(24.dp))
+        Text("规则速览", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                RuleLine("底注", "开局每人自动下 1 底；闷牌跟注 = level 底，看牌 = 2×level 底")
+                RuleLine("加注", "倍数必须高于当前，可自填；看牌加注按 2 倍计")
+                RuleLine("比牌", "三家以上只能与已看牌者比；剩两家可与闷牌者开牌；平局发起者输")
+                RuleLine("牌型", "豹子 > 顺金 > 金花 > 顺子 > 对子 > 单张；杂色 235 吃豹子")
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
         error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(8.dp))
@@ -158,6 +174,25 @@ fun ConfigScreen(
             modifier = Modifier.fillMaxWidth(),
         ) { Text("AI 设置（配置自己的大模型 API）") }
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun RuleLine(label: String, text: String) {
+    Row(modifier = Modifier.padding(vertical = 3.dp)) {
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = MaterialTheme.colorScheme.primary,
+        ) {
+            Text(
+                label,
+                color = MaterialTheme.colorScheme.onPrimary,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
     }
 }
 

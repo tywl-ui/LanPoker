@@ -61,35 +61,42 @@ fun CardFront(
         modifier = modifier.size(width, height),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            // 角落索引
-            val cornerMod = Modifier.offset(x = 4.dp, y = 2.dp)
-            Box(modifier = Modifier.align(Alignment.TopStart).then(cornerMod)) {
-                Column {
-                    Text(
-                        card.label,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = color,
-                        lineHeight = 16.sp,
-                    )
-                }
+            // 左上角索引：点数 + 花色
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = 3.dp, y = 1.dp),
+            ) {
+                Text(
+                    card.label.takeWhile { it.isLetterOrDigit() },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = color,
+                    lineHeight = 14.sp,
+                )
+                Text(
+                    card.label.takeLast(1),
+                    fontSize = 11.sp,
+                    color = color,
+                    lineHeight = 11.sp,
+                )
             }
             // 中央图案
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 when (card) {
                     is Card.Poker -> {
-                        val showRank = card.rank.value >= 11
-                        if (showRank) {
+                        val face = card.rank.value >= 11
+                        if (face) {
                             Text(
                                 card.rank.label,
-                                fontSize = 26.sp,
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = color,
                             )
                         }
                         Text(
                             card.suit.symbol,
-                            fontSize = if (showRank) 22.sp else 34.sp,
+                            fontSize = if (face) 20.sp else 32.sp,
                             color = color,
                             textAlign = TextAlign.Center,
                         )

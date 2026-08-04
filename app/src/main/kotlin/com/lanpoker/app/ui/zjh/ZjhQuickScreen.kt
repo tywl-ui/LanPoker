@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -56,14 +57,20 @@ import com.lanpoker.core.config.GameConfig
 import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.zjh.ZjhQuickGame
 
-private val QUICK_SLOTS = listOf(
-    androidx.compose.ui.geometry.Offset(0.5f, 0.82f),
-    androidx.compose.ui.geometry.Offset(0.5f, 0.10f),
-    androidx.compose.ui.geometry.Offset(0.10f, 0.26f),
-    androidx.compose.ui.geometry.Offset(0.90f, 0.26f),
-    androidx.compose.ui.geometry.Offset(0.10f, 0.56f),
-    androidx.compose.ui.geometry.Offset(0.90f, 0.56f),
-)
+private fun quickSlotsFor(total: Int): List<androidx.compose.ui.geometry.Offset> = when (total) {
+    2 -> listOf(Offset(0.5f, 0.82f), Offset(0.5f, 0.12f))
+    3 -> listOf(Offset(0.5f, 0.82f), Offset(0.12f, 0.28f), Offset(0.88f, 0.28f))
+    4 -> listOf(Offset(0.5f, 0.82f), Offset(0.5f, 0.10f), Offset(0.12f, 0.32f), Offset(0.88f, 0.32f))
+    5 -> listOf(
+        Offset(0.5f, 0.82f), Offset(0.5f, 0.10f), Offset(0.5f, 0.34f),
+        Offset(0.12f, 0.34f), Offset(0.88f, 0.34f),
+    )
+    else -> listOf(
+        Offset(0.5f, 0.82f), Offset(0.5f, 0.08f),
+        Offset(0.24f, 0.12f), Offset(0.76f, 0.12f),
+        Offset(0.10f, 0.38f), Offset(0.90f, 0.38f),
+    )
+}
 
 @Composable
 fun ZjhQuickScreen(
@@ -158,7 +165,7 @@ private fun QuickTable(
                 val idx = players.filter { it.id != chooser?.id }.indexOf(p)
                 if (idx >= 0) idx + 1 else 0
             }
-            val slot = QUICK_SLOTS[slotIndex]
+            val slot = quickSlotsFor(players.size).getOrElse(slotIndex) { quickSlotsFor(players.size).first() }
             val x = (w * slot.x - seatW / 2).coerceAtLeast(0.dp)
             val y = (h * slot.y - seatH / 2).coerceAtLeast(0.dp)
             QuickSeat(
@@ -291,6 +298,7 @@ private fun QuickActionBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickSettledPanel(
     state: QuickUiState,
@@ -352,11 +360,23 @@ private fun QuickSettledPanel(
         }
         Spacer(Modifier.height(12.dp))
         Surface(color = Color(0xFFF1F8E9), shape = RoundedCornerShape(8.dp)) {
-            Text(
-                "总分：" + players.joinToString("  ") { "${it.name} ${signed(state.scores[it.id] ?: 0)}" },
-                modifier = Modifier.padding(8.dp),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text("总分", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    players.forEach { p ->
+                        Text(
+                            "${p.name} ${signed(state.scores[p.id] ?: 0)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

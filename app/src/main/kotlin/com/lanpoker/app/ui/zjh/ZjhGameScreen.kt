@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -62,14 +63,24 @@ import com.lanpoker.core.deck.Suit
 import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.zjh.ZjhBettingGame
 
-private val SLOTS = listOf(
-    androidx.compose.ui.geometry.Offset(0.5f, 0.80f),
-    androidx.compose.ui.geometry.Offset(0.5f, 0.10f),
-    androidx.compose.ui.geometry.Offset(0.10f, 0.26f),
-    androidx.compose.ui.geometry.Offset(0.90f, 0.26f),
-    androidx.compose.ui.geometry.Offset(0.10f, 0.56f),
-    androidx.compose.ui.geometry.Offset(0.90f, 0.56f),
-)
+/**
+ * 座位布局：0 号为当前行动者（屏幕下方正中），其余按人数分布在牌桌周围。
+ * 位置为相对宽高的比例坐标。
+ */
+private fun slotsFor(total: Int): List<androidx.compose.ui.geometry.Offset> = when (total) {
+    2 -> listOf(Offset(0.5f, 0.80f), Offset(0.5f, 0.12f))
+    3 -> listOf(Offset(0.5f, 0.80f), Offset(0.12f, 0.28f), Offset(0.88f, 0.28f))
+    4 -> listOf(Offset(0.5f, 0.80f), Offset(0.5f, 0.10f), Offset(0.12f, 0.32f), Offset(0.88f, 0.32f))
+    5 -> listOf(
+        Offset(0.5f, 0.80f), Offset(0.5f, 0.10f), Offset(0.5f, 0.34f),
+        Offset(0.12f, 0.34f), Offset(0.88f, 0.34f),
+    )
+    else -> listOf(
+        Offset(0.5f, 0.80f), Offset(0.5f, 0.08f),
+        Offset(0.24f, 0.12f), Offset(0.76f, 0.12f),
+        Offset(0.10f, 0.38f), Offset(0.90f, 0.38f),
+    )
+}
 
 @Composable
 fun ZjhGameScreen(
@@ -203,19 +214,21 @@ private fun TableArea(
         val cardW = if (compact) 30.dp else 36.dp
         val cardH = if (compact) 42.dp else 50.dp
         val overlap = if (compact) (-12).dp else (-14).dp
+        val slots = slotsFor(players.size)
 
         players.forEach { p ->
             val slotIndex = if (p.id == actor) 0 else others.indexOf(p) + 1
-            val slot = SLOTS[slotIndex]
+            val slot = slots.getOrElse(slotIndex) { slots.first() }
             val x = (w * slot.x - seatW / 2).coerceAtLeast(0.dp)
             val y = (h * slot.y - seatH / 2).coerceAtLeast(0.dp)
+            val isActorRevealed = p.id == actor && showMyCards
             Seat(
                 player = p,
                 game = game,
                 isTurn = p.id == actor && !gs.over,
-                showCards = p.id == actor && showMyCards,
-                cardW = cardW,
-                cardH = cardH,
+                showCards = isActorRevealed,
+                cardW = if (isActorRevealed) cardW + 10.dp else cardW,
+                cardH = if (isActorRevealed) cardH + 14.dp else cardH,
                 overlap = overlap,
                 modifier = Modifier.offset(x = x, y = y),
             )
@@ -381,7 +394,7 @@ private fun ActionBar(
                             onClick = onCall,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
                         ) {
-                            Text(if (needPay) "跟注 ${req}底" else "过")
+                            Text(if (needPay) "跟注 ${req}底（${req * state.game.base}分）" else "过")
                         }
                         OutlinedButton(onClick = onRaise, border = BorderStroke(1.dp, Color.White)) {
                             Text("加注", color = Color.White)
@@ -402,6 +415,7 @@ private fun ActionBar(
 
 // ---------- 结算面板 ----------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SettledPanel(
     result: com.lanpoker.core.ledger.RoundResult,
@@ -445,11 +459,23 @@ private fun SettledPanel(
                 }
                 Spacer(Modifier.height(8.dp))
                 Surface(color = Color(0xFFF1F8E9), shape = RoundedCornerShape(8.dp)) {
-                    Text(
-                        "总分：" + players.joinToString("  ") { "${it.name} ${signed(scores[it.id] ?: 0)}" },
-                        modifier = Modifier.padding(8.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        Text("总分", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            players.forEach { p ->
+                                Text(
+                                    "${p.name} ${signed(scores[p.id] ?: 0)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
