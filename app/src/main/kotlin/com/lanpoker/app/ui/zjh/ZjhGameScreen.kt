@@ -3,7 +3,6 @@ package com.lanpoker.app.ui.zjh
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,17 +14,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,29 +36,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lanpoker.app.ai.AiEngine
+import com.lanpoker.app.ui.common.Avatar
+import com.lanpoker.app.ui.common.CardBack
+import com.lanpoker.app.ui.common.CardFront
+import com.lanpoker.app.ui.common.ChipStack
+import com.lanpoker.app.ui.common.Gold
+import com.lanpoker.app.ui.common.TableBackground
 import com.lanpoker.core.config.GameConfig
 import com.lanpoker.core.deck.Card
 import com.lanpoker.core.deck.Suit
 import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.zjh.ZjhBettingGame
 
-private val FELT = Color(0xFF14532D)
-private val RED = Color(0xFFD32F2F)
-private val BLACK = Color(0xFF212121)
-
-/** 座位槽位（相对宽高的位置），0 号是当前行动者 */
 private val SLOTS = listOf(
     androidx.compose.ui.geometry.Offset(0.5f, 0.80f),
     androidx.compose.ui.geometry.Offset(0.5f, 0.10f),
@@ -71,8 +71,10 @@ private val SLOTS = listOf(
 @Composable
 fun ZjhGameScreen(
     config: GameConfig,
+    aiIds: Set<Int>,
+    aiEngine: AiEngine?,
     onExit: () -> Unit,
-    viewModel: ZjhGameViewModel = viewModel(factory = ZjhGameViewModel.factory(config)),
+    viewModel: ZjhGameViewModel = viewModel(factory = ZjhGameViewModel.factory(config, aiIds, aiEngine)),
 ) {
     val state = viewModel.state
     val game = state.game
@@ -102,20 +104,38 @@ fun ZjhGameScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(FELT),
+            .background(Color(0xFF0B3D24)),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            TopBar(
-                config = config,
-                round = state.round,
-                onExit = onExit,
-                onBill = { showBill = true },
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onExit) { Text("退出", color = Color.White) }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (aiIds.isEmpty()) "好友局 · 炸金花" else "人机标准局 · 炸金花",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "第 ${state.round} 局 · ${config.deckCount}副 · ${config.playerCount}人 · 底分 ${config.baseScore}",
+                        color = Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                TextButton(onClick = { showBill = true }) { Text("账单", color = Color.White) }
+            }
+
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
             ) {
+                TableBackground(modifier = Modifier.fillMaxSize())
                 if (state.phase == Phase.SETTLED) {
                     SettledPanel(
                         result = state.lastResult!!,
@@ -132,6 +152,7 @@ fun ZjhGameScreen(
                     )
                 }
             }
+
             ActionBar(
                 state = state,
                 players = viewModel.players,
@@ -147,36 +168,7 @@ fun ZjhGameScreen(
     }
 }
 
-// ---------- 顶部栏 ----------
-
-@Composable
-private fun TopBar(
-    config: GameConfig,
-    round: Int,
-    onExit: () -> Unit,
-    onBill: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(onClick = onExit) { Text("退出", color = Color.White) }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "炸金花 · ${config.deckCount}副 · ${config.playerCount}人",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Text("第 $round 局 · 底分 ${config.baseScore}", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
-        }
-        TextButton(onClick = onBill) { Text("账单", color = Color.White) }
-    }
-}
-
-// ---------- 牌桌区域 ----------
+// ---------- 牌桌 ----------
 
 @Composable
 private fun TableArea(
@@ -192,7 +184,7 @@ private fun TableArea(
         val w = maxWidth
         val h = maxHeight
         val seatW = 116.dp
-        val seatH = 150.dp
+        val seatH = 170.dp
 
         players.forEach { p ->
             val slotIndex = if (p.id == actor) 0 else others.indexOf(p) + 1
@@ -208,23 +200,22 @@ private fun TableArea(
             )
         }
 
-        // 桌子中心：底池 + 动作提示
+        // 桌子中心：底池
         Column(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(shape = CircleShape, color = Color(0xFF0B3D24), border = BorderStroke(2.dp, Color(0xFF2E7D32))) {
+            Surface(
+                shape = CircleShape,
+                color = Color(0xFF0B3D24).copy(alpha = 0.9f),
+                border = BorderStroke(2.dp, Color(0xFF2E7D32)),
+            ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("底池", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        "${game.pot()} 分",
-                        color = Color(0xFFFFD54F),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    ChipStack(pot = game.pot())
+                    Text("底池 ${game.pot()} 分", color = Gold, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -254,23 +245,8 @@ private fun Seat(
     val stake = gs.stakes[player.id] ?: 0
     val hand = game.hands[game.players.indexOf(player)]
 
-    Column(
-        modifier = modifier.width(116.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = if (isTurn) MaterialTheme.colorScheme.primary else Color(0xFFE0E0E0),
-            modifier = Modifier.size(36.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    player.name.takeLast(1),
-                    color = if (isTurn) Color.White else Color(0xFF616161),
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
+    Column(modifier = modifier.width(116.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Avatar(name = player.name, index = game.players.indexOf(player), isTurn = isTurn)
         Text(
             player.name,
             color = Color.White,
@@ -280,19 +256,23 @@ private fun Seat(
         Spacer(Modifier.height(4.dp))
         Row {
             hand.forEachIndexed { i, card ->
-                MiniCard(
-                    card = card,
-                    faceUp = showCards,
-                    dimmed = folded,
-                    modifier = Modifier.offset(x = if (i == 0) 0.dp else (-14).dp),
-                )
+                val m = Modifier.offset(x = if (i == 0) 0.dp else (-14).dp)
+                if (showCards && !folded) {
+                    CardFront(card = card, width = 36.dp, height = 50.dp, modifier = m)
+                } else {
+                    CardBack(width = 36.dp, height = 50.dp, dimmed = folded, modifier = m)
+                }
             }
         }
         Spacer(Modifier.height(4.dp))
         Surface(
             shape = RoundedCornerShape(6.dp),
-            color = if (folded) Color(0x99616161) else if (isTurn) MaterialTheme.colorScheme.primary
-            else Color(0xCCFFFFFF),
+            color = when {
+                folded -> Color(0x99616161)
+                isTurn && !looked -> Color(0xFF1E88E5)
+                looked -> Color(0xFF43A047)
+                else -> Color(0xCCFFFFFF)
+            },
         ) {
             Text(
                 when {
@@ -302,43 +282,16 @@ private fun Seat(
                     else -> "等待中"
                 },
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                color = if (folded) Color.White else Color.Black,
+                color = Color.White,
                 style = MaterialTheme.typography.labelSmall,
             )
         }
         if (stake > 0 && !folded) {
             Text(
                 "已投 $stake",
-                color = Color(0xFFFFD54F),
+                color = Gold,
                 style = MaterialTheme.typography.labelSmall,
             )
-        }
-    }
-}
-
-@Composable
-private fun MiniCard(
-    card: Card,
-    faceUp: Boolean,
-    dimmed: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val color = when (card) {
-        is Card.Poker -> if (card.suit == Suit.HEART || card.suit == Suit.DIAMOND) RED else BLACK
-        is Card.Joker -> Color(0xFF1E88E5)
-    }
-    Surface(
-        shape = RoundedCornerShape(5.dp),
-        color = if (faceUp) Color.White else if (dimmed) Color(0xFF757575) else Color(0xFF1565C0),
-        border = BorderStroke(1.dp, if (faceUp) Color.LightGray else Color(0xFF0D47A1)),
-        modifier = modifier.size(width = 36.dp, height = 50.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            if (faceUp) {
-                Text(card.label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = color)
-            } else {
-                Text("·", color = Color.White.copy(alpha = 0.7f), fontSize = 18.sp)
-            }
         }
     }
 }
@@ -360,49 +313,54 @@ private fun ActionBar(
     val gs = state.game.state
     val actor = players.firstOrNull { it.id == gs.turn }
 
-    Surface(
-        color = Color(0xFF0B3D24),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    Surface(color = Color(0xFF0B3D24), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             if (state.phase == Phase.BETTING && actor != null) {
-                val looked = gs.looked.contains(actor.id)
-                val stake = gs.stakes[actor.id] ?: 0
-                val req = if (looked) 2 * gs.level else gs.level
-                val needPay = stake < req * state.game.base
-                Text(
-                    "轮到你：${actor.name}（${if (looked) "已看牌" else "闷牌"}）",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (!looked) {
-                        Button(
-                            onClick = if (showMyCards) onHide else onLook,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
-                        ) { Text(if (showMyCards) "合上" else "看牌") }
-                    }
-                    Button(
-                        onClick = onCall,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                        modifier = Modifier.weight(1f),
+                if (state.aiThinking) {
+                    Text(
+                        "${actor.name} 思考中…",
+                        color = Gold,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                } else {
+                    val looked = gs.looked.contains(actor.id)
+                    val stake = gs.stakes[actor.id] ?: 0
+                    val req = if (looked) 2 * gs.level else gs.level
+                    val needPay = stake < req * state.game.base
+                    Text(
+                        "轮到你：${actor.name}（${if (looked) "已看牌" else "闷牌"}）",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(if (needPay) "跟注 ${req}底" else "过")
+                        if (!looked) {
+                            Button(
+                                onClick = if (showMyCards) onHide else onLook,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+                            ) { Text(if (showMyCards) "合上" else "看牌") }
+                        }
+                        Button(
+                            onClick = onCall,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(if (needPay) "跟注 ${req}底" else "过")
+                        }
+                        OutlinedButton(onClick = onRaise, border = BorderStroke(1.dp, Color.White)) {
+                            Text("加注", color = Color.White)
+                        }
+                        OutlinedButton(onClick = onCompare, border = BorderStroke(1.dp, Color.White)) {
+                            Text("比牌", color = Color.White)
+                        }
+                        Button(
+                            onClick = onFold,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+                        ) { Text("弃牌") }
                     }
-                    OutlinedButton(onClick = onRaise, border = BorderStroke(1.dp, Color.White)) {
-                        Text("加注", color = Color.White)
-                    }
-                    OutlinedButton(onClick = onCompare, border = BorderStroke(1.dp, Color.White)) {
-                        Text("比牌", color = Color.White)
-                    }
-                    Button(
-                        onClick = onFold,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-                    ) { Text("弃牌") }
                 }
             }
         }
@@ -426,10 +384,10 @@ private fun SettledPanel(
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Text(
             "${result.winnerName} 赢！",
-            color = Color(0xFFFFD54F),
+            color = Gold,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
         )
@@ -438,7 +396,7 @@ private fun SettledPanel(
             color = Color.White,
             style = MaterialTheme.typography.titleMedium,
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
         Surface(shape = RoundedCornerShape(12.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 result.entries.forEach { e ->
@@ -462,7 +420,7 @@ private fun SettledPanel(
                 }
             }
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = onNext) { Text("下一局") }
             OutlinedButton(onClick = onBill, border = BorderStroke(1.dp, Color.White)) { Text("账单", color = Color.White) }
@@ -479,12 +437,22 @@ private fun RaiseDialog(
     onPick: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val choices = listOf(2, 3, 4, 5, 6, 8, 10).filter { it > currentLevel && it <= maxLevel }
+    val choices = listOf(2, 3, 5, 10).filter { it > currentLevel && it <= maxLevel }
+    var custom by remember { mutableStateOf("") }
+    val customValue = custom.toIntOrNull()
+    val customValid = customValue != null && customValue > currentLevel && customValue <= maxLevel
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("加注到几倍？") },
         text = {
             Column {
+                Text(
+                    "规则：看牌出的倍数是闷牌的 2 倍；后一家的倍数不能低于当前（$currentLevel 倍）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
                 choices.forEach { level ->
                     Button(
                         onClick = { onPick(level) },
@@ -493,9 +461,30 @@ private fun RaiseDialog(
                             .padding(vertical = 3.dp),
                     ) { Text("${level} 倍（闷 $level 底 / 看 ${level * 2} 底）") }
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = custom,
+                    onValueChange = { custom = it.filter(Char::isDigit).take(3) },
+                    label = { Text("自填倍数") },
+                    placeholder = { Text("大于 $currentLevel") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (custom.isNotBlank() && !customValid) {
+                    Text(
+                        "需大于当前 $currentLevel 倍且不超过 $maxLevel",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            TextButton(
+                enabled = customValid,
+                onClick = { customValue?.let(onPick) },
+            ) { Text("确定") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
@@ -511,9 +500,7 @@ private fun CompareDialog(
         title = { Text("和谁比牌？") },
         text = {
             Column {
-                if (targets.isEmpty()) {
-                    Text("没有可比的玩家")
-                }
+                if (targets.isEmpty()) Text("没有可比的玩家")
                 targets.forEach { p ->
                     Button(
                         onClick = { onPick(p.id) },

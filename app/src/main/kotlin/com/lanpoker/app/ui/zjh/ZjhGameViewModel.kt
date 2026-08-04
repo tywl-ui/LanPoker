@@ -4,8 +4,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.lanpoker.app.ai.AiEngine
+import com.lanpoker.core.ai.AiActionType
+import com.lanpoker.core.ai.AiDecision
 import com.lanpoker.core.config.GameConfig
 import com.lanpoker.core.deck.Deck
 import com.lanpoker.core.ledger.LedgerSession
@@ -13,6 +17,8 @@ import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.ledger.RoundResult
 import com.lanpoker.core.zjh.ZjhBettingGame
 import com.lanpoker.core.zjh.ZjhRules
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 enum class Phase { BETTING, SETTLED }
 
@@ -23,13 +29,16 @@ data class UiState(
     val lastResult: RoundResult?,
     val scores: Map<Int, Int>,
     val round: Int,
+    val aiThinking: Boolean,
 )
 
 class ZjhGameViewModel(
     val config: GameConfig,
+    val aiIds: Set<Int>,
+    private val aiEngine: AiEngine?,
 ) : ViewModel() {
 
-    val players: List<Player> = (1..config.playerCount).map { Player(it, "玩家$it") }
+    val players: List<Player> = (1..config.playerCount).map { Player(it, if (it in aiIds) "AI$it" else "玩家$it") }
     private val ledger = LedgerSession(config, players)
 
     var state by mutableStateOf(newRoundState())
@@ -45,10 +54,10 @@ class ZjhGameViewModel(
             lastResult = null,
             scores = ledger.scores,
             round = ledger.rounds.size + 1,
+            aiThinking = false,
         )
     }
 
-    /** 当前行动者翻看自己的牌（视觉上展示，随后自动合上） */
     fun look() {
         if (state.game.look()) state = state.copy(showMyCards = true)
     }
@@ -86,21 +95,82 @@ class ZjhGameViewModel(
                 showMyCards = false,
                 lastResult = result,
                 scores = ledger.scores,
+                aiThinking = false,
             )
         } else {
             state = state.copy(showMyCards = false)
+            runAiIfNeeded()
+        }
+    }
+
+    /** 轮到 AI 时自动决策（AI 连打直到轮到真人或结束） */
+    private fun runAiIfNeeded() {
+        val gs = state.game.state
+        if (gs.over || gs.turn !in aiIds) return
+        val engine = aiEngine ?: return
+        viewModelScope.launch {
+            state = state.copy(aiThinking = true)
+            while (true) {
+                val s = state.game.state
+                if (s.over) break
+                if (s.turn !in aiIds) break
+                delay(1100)
+                val id = s.turn
+                val hand = state.game.handOf(id)
+                val decision = engine.decideBetting(
+                    hand = hand,
+                    gs = s,
+                    myId = id,
+                    players = players,
+                    base = config.baseScore,
+                    maxLevel = state.game.maxLevel,
+                )
+                val applied = applyDecision(id, decision)
+                if (!applied) {
+                    // 非法决策（比如重复看牌）→ 兜底：跟注或弃牌
+                    if (id in state.game.state.looked) state.game.call() else state.game.look()
+                }
+            }
+            state = state.copy(aiThinking = false)
+            val g = state.game
+            if (g.state.over) {
+                val result = ledger.settleRound(
+                    winnerId = g.state.winnerId,
+                    winnerHandLabel = g.state.winnerLabel,
+                    deltas = g.settlementDeltas(),
+                )
+                state = state.copy(
+                    phase = Phase.SETTLED,
+                    lastResult = result,
+                    scores = ledger.scores,
+                    aiThinking = false,
+                )
+            }
+        }
+    }
+
+    private fun applyDecision(id: Int, d: AiDecision): Boolean {
+        val g = state.game
+        if (g.state.turn != id || g.state.over || id in g.state.folded) return false
+        return when (d.action) {
+            AiActionType.LOOK -> g.look()
+            AiActionType.CALL -> g.call()
+            AiActionType.RAISE -> d.level?.let { g.raise(it) } ?: false
+            AiActionType.FOLD -> g.fold()
+            AiActionType.COMPARE -> d.targetId?.let { g.compare(it) } ?: false
         }
     }
 
     fun nextRound() {
         state = newRoundState()
+        runAiIfNeeded()
     }
 
     fun exportBill(): String = ledger.exportText()
 
     companion object {
-        fun factory(config: GameConfig) = viewModelFactory {
-            initializer { ZjhGameViewModel(config) }
+        fun factory(config: GameConfig, aiIds: Set<Int>, aiEngine: AiEngine?) = viewModelFactory {
+            initializer { ZjhGameViewModel(config, aiIds, aiEngine) }
         }
     }
 }

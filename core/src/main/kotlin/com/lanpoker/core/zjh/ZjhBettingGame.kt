@@ -53,6 +53,8 @@ class ZjhBettingGame(
 
     fun handLabel(id: Int): String = ZjhEvaluator.describe(evaluated.getValue(id))
 
+    fun handOf(id: Int): ZjhHand = evaluated.getValue(id)
+
     private fun name(id: Int) = players.first { it.id == id }.name
     private fun stakeOf(id: Int) = _state.stakes[id] ?: 0
 
