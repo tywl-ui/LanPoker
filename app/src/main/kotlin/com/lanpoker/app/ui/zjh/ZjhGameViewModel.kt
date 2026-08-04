@@ -7,27 +7,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.lanpoker.core.config.GameConfig
-import com.lanpoker.core.deck.Card
 import com.lanpoker.core.deck.Deck
 import com.lanpoker.core.ledger.LedgerSession
 import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.ledger.RoundResult
-import com.lanpoker.core.zjh.ZjhEvaluator
-import com.lanpoker.core.zjh.ZjhHand
-import com.lanpoker.core.zjh.TieRule
+import com.lanpoker.core.zjh.ZjhBettingGame
+import com.lanpoker.core.zjh.ZjhRules
 
-enum class Phase { PASS_PHONE, REVEAL, MULTIPLIER, SETTLED }
+enum class Phase { BETTING, SETTLED }
 
 data class UiState(
     val phase: Phase,
-    val hands: List<List<Card>>,
-    val evaluated: List<ZjhHand>,
-    val currentViewer: Int,
-    val winnerIndex: Int?,
-    val multipliers: Map<Int, Int>,
+    val game: ZjhBettingGame,
+    val showMyCards: Boolean,
     val lastResult: RoundResult?,
     val scores: Map<Int, Int>,
-    val message: String?,
+    val round: Int,
 )
 
 class ZjhGameViewModel(
@@ -37,97 +32,68 @@ class ZjhGameViewModel(
     val players: List<Player> = (1..config.playerCount).map { Player(it, "玩家$it") }
     private val ledger = LedgerSession(config, players)
 
-    var state by mutableStateOf(UiState(
-        phase = Phase.PASS_PHONE,
-        hands = emptyList(),
-        evaluated = emptyList(),
-        currentViewer = 0,
-        winnerIndex = null,
-        multipliers = emptyMap(),
-        lastResult = null,
-        scores = ledger.scores,
-        message = null,
-    ))
+    var state by mutableStateOf(newRoundState())
         private set
 
-    init {
-        deal()
-    }
-
-    /** 发牌，开始传手机看牌 */
-    fun deal() {
+    private fun newRoundState(): UiState {
         val deck = Deck.build(config.deckCount, config.jokerCount)
-        val (hands, _) = deck.deal(handSize = 3, playerCount = config.playerCount)
-        state = state.copy(
-            phase = Phase.PASS_PHONE,
-            hands = hands,
-            evaluated = emptyList(),
-            currentViewer = 0,
-            winnerIndex = null,
-            multipliers = emptyMap(),
-            message = null,
+        val (hands, _) = deck.deal(handSize = 3, playerCount = players.size)
+        return UiState(
+            phase = Phase.BETTING,
+            game = ZjhBettingGame(players, hands, config.baseScore, ZjhRules()),
+            showMyCards = false,
+            lastResult = null,
+            scores = ledger.scores,
+            round = ledger.rounds.size + 1,
         )
     }
 
-    /** 当前玩家看完牌，传给下一位；最后一位看完后亮牌判定 */
-    fun confirmViewed() {
-        if (state.currentViewer < state.hands.size - 1) {
-            state = state.copy(currentViewer = state.currentViewer + 1)
-            return
-        }
-        val evaluated = state.hands.map { ZjhEvaluator.evaluate(it) }
-        val winner = ZjhEvaluator.strongestIndex(evaluated, TieRule.REDEAL)
-        if (winner == null) {
-            // 和局：重发一局
-            val deck = Deck.build(config.deckCount, config.jokerCount)
-            val (hands, _) = deck.deal(handSize = 3, playerCount = config.playerCount)
+    /** 当前行动者翻看自己的牌（视觉上展示，随后自动合上） */
+    fun look() {
+        if (state.game.look()) state = state.copy(showMyCards = true)
+    }
+
+    fun hideCards() {
+        state = state.copy(showMyCards = false)
+    }
+
+    fun call() {
+        if (state.game.call()) afterAction()
+    }
+
+    fun raise(level: Int) {
+        if (state.game.raise(level)) afterAction()
+    }
+
+    fun fold() {
+        if (state.game.fold()) afterAction()
+    }
+
+    fun compare(targetId: Int) {
+        if (state.game.compare(targetId)) afterAction()
+    }
+
+    private fun afterAction() {
+        val g = state.game
+        if (g.state.over) {
+            val result = ledger.settleRound(
+                winnerId = g.state.winnerId,
+                winnerHandLabel = g.state.winnerLabel,
+                deltas = g.settlementDeltas(),
+            )
             state = state.copy(
-                phase = Phase.PASS_PHONE,
-                hands = hands,
-                evaluated = emptyList(),
-                currentViewer = 0,
-                message = "本局和局，自动重发一局",
+                phase = Phase.SETTLED,
+                showMyCards = false,
+                lastResult = result,
+                scores = ledger.scores,
             )
         } else {
-            state = state.copy(
-                phase = Phase.REVEAL,
-                evaluated = evaluated,
-                winnerIndex = winner,
-            )
+            state = state.copy(showMyCards = false)
         }
     }
 
-    /** 进入填倍数阶段，输家默认填 1 */
-    fun startMultiplier() {
-        val w = state.winnerIndex ?: return
-        val losers = players.filterIndexed { i, _ -> i != w }
-        state = state.copy(
-            phase = Phase.MULTIPLIER,
-            multipliers = losers.associate { it.id to 1 },
-        )
-    }
-
-    fun setMultiplier(playerId: Int, value: Int) {
-        state = state.copy(
-            multipliers = state.multipliers + (playerId to value.coerceAtLeast(0)),
-        )
-    }
-
-    /** 结算本局并记账 */
-    fun settle() {
-        val w = state.winnerIndex ?: return
-        val winner = players[w]
-        val handLabel = ZjhEvaluator.describe(state.evaluated[w])
-        val result = ledger.settle(
-            winnerId = winner.id,
-            winnerHandLabel = handLabel,
-            multipliers = state.multipliers,
-        )
-        state = state.copy(
-            phase = Phase.SETTLED,
-            lastResult = result,
-            scores = ledger.scores,
-        )
+    fun nextRound() {
+        state = newRoundState()
     }
 
     fun exportBill(): String = ledger.exportText()

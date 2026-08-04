@@ -79,7 +79,7 @@ fun ConfigScreen(
         Spacer(Modifier.height(4.dp))
 
         StepperRow("牌副数", deckCount, { deckCount = it }, 1..3)
-        StepperRow("人数", playerCount, { playerCount = it }, 2..8)
+        StepperRow("人数", playerCount, { playerCount = it }, 2..6)
         StepperRow("王数量", jokerCount, { jokerCount = it }, 0..(deckCount * 2))
         StepperRow("底分", baseScore, { baseScore = it }, 1..20)
 
@@ -90,7 +90,7 @@ fun ConfigScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "平局规则：和局重发（暂定）",
+            "玩法：闷牌下注，看牌下注翻倍；可跟注 / 加注 / 比牌 / 弃牌",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

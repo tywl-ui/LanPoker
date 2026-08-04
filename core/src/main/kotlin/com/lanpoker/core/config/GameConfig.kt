@@ -23,7 +23,7 @@ data class GameConfig(
         GameType.ZJH -> when {
             deckCount !in 1..3 -> "副数需在 1-3 之间"
             jokerCount !in 0..deckCount * 2 -> "王数量需在 0-${deckCount * 2} 之间（$deckCount 副）"
-            playerCount !in 2..8 -> "人数需在 2-8 之间"
+            playerCount !in 2..6 -> "人数需在 2-6 之间"
             totalCards < playerCount * 3 -> "牌数（$totalCards）不足以给 $playerCount 人各发 3 张"
             else -> null
         }

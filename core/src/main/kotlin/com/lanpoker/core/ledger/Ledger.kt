@@ -8,7 +8,6 @@ data class Player(val id: Int, val name: String)
 data class Entry(
     val playerId: Int,
     val playerName: String,
-    val multiplier: Int,
     val delta: Int,
 )
 
@@ -26,8 +25,7 @@ data class RoundResult(
 
 /**
  * 记账会话：记录一桌人若干局的输赢。
- * 结算规则（炸金花模式 A）：赢家收入 = Σ(输家填的倍数 × 底分)；每个输家扣 自身倍数 × 底分。
- * winnerId == null 视为和局/退钱，本局不记分。
+ * 结算按每局实际分数差（deltas）累计；deltas 之和恒为 0（赢家收底池，输家付投入）。
  */
 class LedgerSession(
     val config: GameConfig,
@@ -39,33 +37,21 @@ class LedgerSession(
     val rounds: List<RoundResult> get() = _rounds
     val scores: Map<Int, Int> get() = _scores
 
-    /** @param multipliers 玩家自填倍数（输家填自己输几个底；赢家/和局可不填） */
-    fun settle(
+    /** 记一局。winnerId 为 null 视为和局（全 0 不计分） */
+    fun settleRound(
         winnerId: Int?,
         winnerHandLabel: String?,
-        multipliers: Map<Int, Int>,
+        deltas: Map<Int, Int>,
     ): RoundResult {
-        val deltas = mutableMapOf<Int, Int>()
-        for (p in players) {
-            deltas[p.id] = if (winnerId == null) 0
-            else if (p.id == winnerId) {
-                players.filter { it.id != winnerId }
-                    .sumOf { (multipliers[it.id] ?: 0) * config.baseScore }
-            } else {
-                -(multipliers[p.id] ?: 0) * config.baseScore
-            }
-        }
-        deltas.forEach { (id, d) -> _scores[id] = _scores.getValue(id) + d }
         val result = RoundResult(
             round = _rounds.size + 1,
             winnerId = winnerId,
             winnerName = players.find { it.id == winnerId }?.name,
             winnerHandLabel = winnerHandLabel,
-            entries = players.map { p ->
-                Entry(p.id, p.name, multipliers[p.id] ?: 0, deltas.getValue(p.id))
-            },
+            entries = players.map { p -> Entry(p.id, p.name, deltas[p.id] ?: 0) },
             deltas = deltas,
         )
+        deltas.forEach { (id, d) -> _scores[id] = _scores.getValue(id) + d }
         _rounds += result
         return result
     }
@@ -75,7 +61,7 @@ class LedgerSession(
         val sb = StringBuilder()
         sb.appendLine("【局域网棋牌】记账单")
         sb.appendLine("玩法：${config.gameType.label} | ${config.deckCount} 副牌 | ${players.size} 人 | 底分 ${config.baseScore}")
-        sb.appendLine("玩家：" + players.joinToString("、") { "${it.name}" })
+        sb.appendLine("玩家：" + players.joinToString("、") { it.name })
         sb.appendLine("----")
         for (r in _rounds) {
             if (r.isDraw) {
@@ -84,7 +70,7 @@ class LedgerSession(
                 sb.appendLine("第 ${r.round} 局：${r.winnerName} 赢（${r.winnerHandLabel}）")
                 for (e in r.entries) {
                     if (e.playerId != r.winnerId) {
-                        sb.appendLine("  ${e.playerName} 填 ${e.multiplier} 底，${signed(e.delta)}")
+                        sb.appendLine("  ${e.playerName} ${signed(e.delta)}")
                     }
                 }
             }
