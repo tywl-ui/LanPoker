@@ -36,9 +36,14 @@ class ZjhGameViewModel(
     val config: GameConfig,
     val aiIds: Set<Int>,
     private val aiEngine: AiEngine?,
+    names: List<String>,
+    private val rules: ZjhRules,
 ) : ViewModel() {
 
-    val players: List<Player> = (1..config.playerCount).map { Player(it, if (it in aiIds) "AI$it" else "玩家$it") }
+    val players: List<Player> = (1..config.playerCount).map { i ->
+        val raw = names.getOrNull(i - 1)?.trim().orEmpty()
+        Player(i, raw.ifBlank { if (i in aiIds) "AI$i" else "玩家$i" })
+    }
     private val ledger = LedgerSession(config, players)
 
     var state by mutableStateOf(newRoundState())
@@ -54,7 +59,7 @@ class ZjhGameViewModel(
         val (hands, _) = deck.deal(handSize = 3, playerCount = players.size)
         return UiState(
             phase = Phase.BETTING,
-            game = ZjhBettingGame(players, hands, config.baseScore, ZjhRules()),
+            game = ZjhBettingGame(players, hands, config.baseScore, rules),
             showMyCards = false,
             lastResult = null,
             scores = ledger.scores,
@@ -174,8 +179,9 @@ class ZjhGameViewModel(
     fun exportBill(): String = ledger.exportText()
 
     companion object {
-        fun factory(config: GameConfig, aiIds: Set<Int>, aiEngine: AiEngine?) = viewModelFactory {
-            initializer { ZjhGameViewModel(config, aiIds, aiEngine) }
-        }
+        fun factory(config: GameConfig, aiIds: Set<Int>, aiEngine: AiEngine?, names: List<String>, rules: ZjhRules) =
+            viewModelFactory {
+                initializer { ZjhGameViewModel(config, aiIds, aiEngine, names, rules) }
+            }
     }
 }

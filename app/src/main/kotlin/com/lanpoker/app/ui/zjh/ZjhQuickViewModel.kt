@@ -16,6 +16,7 @@ import com.lanpoker.core.ledger.RoundResult
 import com.lanpoker.core.zjh.ZjhEvaluator
 import com.lanpoker.core.zjh.ZjhQuickGame
 import com.lanpoker.core.zjh.ZjhRules
+import com.lanpoker.core.zjh.TieRule
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -39,9 +40,15 @@ class ZjhQuickViewModel(
     val config: GameConfig,
     val aiIds: Set<Int>,
     private val aiEngine: AiEngine,
+    names: List<String>,
+    private val rules: ZjhRules,
+    private val tieRule: TieRule,
 ) : ViewModel() {
 
-    val players: List<Player> = (1..config.playerCount).map { Player(it, if (it in aiIds) "AI$it" else "玩家$it") }
+    val players: List<Player> = (1..config.playerCount).map { i ->
+        val raw = names.getOrNull(i - 1)?.trim().orEmpty()
+        Player(i, raw.ifBlank { if (i in aiIds) "AI$i" else "玩家$i" })
+    }
     private val ledger = LedgerSession(config, players)
 
     var state by mutableStateOf(newRound())
@@ -57,7 +64,7 @@ class ZjhQuickViewModel(
         val (hands, _) = deck.deal(handSize = 3, playerCount = players.size)
         return QuickUiState(
             phase = QuickPhase.CHOOSE,
-            game = ZjhQuickGame(players, hands, config.baseScore, ZjhRules()),
+            game = ZjhQuickGame(players, hands, config.baseScore, rules, tieRule),
             showMyCards = false,
             lastResult = null,
             scores = ledger.scores,
@@ -145,8 +152,9 @@ class ZjhQuickViewModel(
     fun exportBill(): String = ledger.exportText()
 
     companion object {
-        fun factory(config: GameConfig, aiIds: Set<Int>, aiEngine: AiEngine) = viewModelFactory {
-            initializer { ZjhQuickViewModel(config, aiIds, aiEngine) }
-        }
+        fun factory(config: GameConfig, aiIds: Set<Int>, aiEngine: AiEngine, names: List<String>, rules: ZjhRules, tieRule: TieRule) =
+            viewModelFactory {
+                initializer { ZjhQuickViewModel(config, aiIds, aiEngine, names, rules, tieRule) }
+            }
     }
 }

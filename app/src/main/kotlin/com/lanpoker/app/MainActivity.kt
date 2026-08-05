@@ -17,6 +17,8 @@ import com.lanpoker.app.ui.theme.LanPokerTheme
 import com.lanpoker.app.ui.zjh.ZjhGameScreen
 import com.lanpoker.app.ui.zjh.ZjhQuickScreen
 import com.lanpoker.core.config.GameConfig
+import com.lanpoker.core.zjh.TieRule
+import com.lanpoker.core.zjh.ZjhRules
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,7 +33,9 @@ class MainActivity : ComponentActivity() {
                 when {
                     showAiSettings -> AiSettingsScreen(onBack = { showAiSettings = false })
                     current == null -> ConfigScreen(
-                        onStart = { config, mode, aiCount -> session = Session(config, mode, aiCount) },
+                        onStart = { config, mode, aiCount, names, rules, tieRule ->
+                            session = Session(config, mode, aiCount, names, rules, tieRule)
+                        },
                         onOpenAiSettings = { showAiSettings = true },
                     )
                     else -> {
@@ -42,18 +46,25 @@ class MainActivity : ComponentActivity() {
                                 config = current.config,
                                 aiIds = emptySet(),
                                 aiEngine = null,
+                                names = current.names,
+                                rules = current.rules,
                                 onExit = { session = null },
                             )
                             GameMode.VS_AI_QUICK -> ZjhQuickScreen(
                                 config = current.config,
                                 aiIds = aiIds,
                                 aiEngine = aiEngine,
+                                names = current.names,
+                                rules = current.rules,
+                                tieRule = current.tieRule,
                                 onExit = { session = null },
                             )
                             GameMode.VS_AI_FULL -> ZjhGameScreen(
                                 config = current.config,
                                 aiIds = aiIds,
                                 aiEngine = aiEngine,
+                                names = current.names,
+                                rules = current.rules,
                                 onExit = { session = null },
                             )
                         }
@@ -68,4 +79,7 @@ private data class Session(
     val config: GameConfig,
     val mode: GameMode,
     val aiCount: Int,
+    val names: List<String>,
+    val rules: ZjhRules,
+    val tieRule: TieRule,
 )

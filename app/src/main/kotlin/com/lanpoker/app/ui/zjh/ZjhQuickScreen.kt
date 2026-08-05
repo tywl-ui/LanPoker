@@ -1,6 +1,10 @@
 package com.lanpoker.app.ui.zjh
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +59,9 @@ import com.lanpoker.app.ui.common.Gold
 import com.lanpoker.app.ui.common.TableBackground
 import com.lanpoker.core.config.GameConfig
 import com.lanpoker.core.ledger.Player
+import com.lanpoker.core.zjh.TieRule
 import com.lanpoker.core.zjh.ZjhQuickGame
+import com.lanpoker.core.zjh.ZjhRules
 
 private fun quickSlotsFor(total: Int): List<androidx.compose.ui.geometry.Offset> = when (total) {
     2 -> listOf(Offset(0.5f, 0.82f), Offset(0.5f, 0.12f))
@@ -77,12 +83,30 @@ fun ZjhQuickScreen(
     config: GameConfig,
     aiIds: Set<Int>,
     aiEngine: AiEngine,
+    names: List<String>,
+    rules: ZjhRules,
+    tieRule: TieRule,
     onExit: () -> Unit,
-    viewModel: ZjhQuickViewModel = viewModel(factory = ZjhQuickViewModel.factory(config, aiIds, aiEngine)),
+    viewModel: ZjhQuickViewModel = viewModel(
+        factory = ZjhQuickViewModel.factory(config, aiIds, aiEngine, names, rules, tieRule),
+    ),
 ) {
     val state = viewModel.state
     val game = state.game
     var showBill by remember { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
+
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("退出对局？") },
+            text = { Text("退出后本局账目将丢失，确定退出吗？") },
+            confirmButton = {
+                TextButton(onClick = { onExit() }) { Text("退出", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showExitConfirm = false }) { Text("继续玩") } },
+        )
+    }
 
     if (showBill) {
         BillDialogQuick(text = viewModel.exportBill(), onDismiss = { showBill = false })
@@ -97,7 +121,7 @@ fun ZjhQuickScreen(
                     .background(Color(0xFF0B3D24)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onExit) { Text("退出", color = Color.White) }
+                TextButton(onClick = { showExitConfirm = true }) { Text("退出", color = Color.White) }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "人机快局 · 闷${config.baseScore}底/看${config.baseScore * 2}底",
@@ -217,13 +241,18 @@ private fun QuickSeat(
             fontWeight = if (isChooser) FontWeight.Bold else FontWeight.Normal,
         )
         Spacer(Modifier.height(4.dp))
-        Row {
-            hand.forEachIndexed { i, card ->
-                val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
-                if (showCards) {
-                    CardFront(card = card, width = cardW, height = cardH, modifier = m)
-                } else {
-                    CardBack(width = cardW, height = cardH, modifier = m)
+        AnimatedVisibility(
+            visible = true,
+            enter = fadeIn(tween(280)) + scaleIn(initialScale = 0.6f, animationSpec = tween(280)),
+        ) {
+            Row {
+                hand.forEachIndexed { i, card ->
+                    val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
+                    if (showCards) {
+                        CardFront(card = card, width = cardW, height = cardH, modifier = m)
+                    } else {
+                        CardBack(width = cardW, height = cardH, modifier = m)
+                    }
                 }
             }
         }
@@ -233,7 +262,11 @@ private fun QuickSeat(
             color = if (stake != null) Color(0xFF43A047) else Color(0x99000000),
         ) {
             Text(
-                if (stake != null) "下注 $stake" else "未选",
+                when {
+                    stake == null -> "未选"
+                    stake == game.base -> "闷 ${game.base}底"
+                    else -> "看 ${game.base * 2}底"
+                },
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                 color = Color.White,
                 style = MaterialTheme.typography.labelSmall,

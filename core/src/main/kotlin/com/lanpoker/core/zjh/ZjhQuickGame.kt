@@ -13,6 +13,7 @@ class ZjhQuickGame(
     val hands: List<List<Card>>,
     val base: Int,
     val rules: ZjhRules = ZjhRules(),
+    val tieRule: TieRule = TieRule.REDEAL,
 ) {
     data class State(
         val chosen: Map<Int, Int>,   // playerId -> 投入(底分)
@@ -49,7 +50,7 @@ class ZjhQuickGame(
 
     private fun finish() {
         val handsEval = players.map { evaluated.getValue(it.id) }
-        val winner = ZjhEvaluator.strongestIndex(handsEval, TieRule.REDEAL)
+        val winner = ZjhEvaluator.strongestIndex(handsEval, tieRule)
         _state = if (winner == null) {
             _state.copy(over = true)
         } else {

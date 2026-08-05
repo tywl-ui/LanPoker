@@ -1,6 +1,10 @@
 package com.lanpoker.app.ui.zjh
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,6 +67,7 @@ import com.lanpoker.core.deck.Card
 import com.lanpoker.core.deck.Suit
 import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.zjh.ZjhBettingGame
+import com.lanpoker.core.zjh.ZjhRules
 
 /**
  * 座位布局：0 号为当前行动者（屏幕下方正中），其余按人数分布在牌桌周围。
@@ -87,15 +93,29 @@ fun ZjhGameScreen(
     config: GameConfig,
     aiIds: Set<Int>,
     aiEngine: AiEngine?,
+    names: List<String>,
+    rules: ZjhRules,
     onExit: () -> Unit,
-    viewModel: ZjhGameViewModel = viewModel(factory = ZjhGameViewModel.factory(config, aiIds, aiEngine)),
+    viewModel: ZjhGameViewModel = viewModel(factory = ZjhGameViewModel.factory(config, aiIds, aiEngine, names, rules)),
 ) {
     val state = viewModel.state
     val game = state.game
     var showBill by remember { mutableStateOf(false) }
     var showRaise by remember { mutableStateOf(false) }
     var showCompare by remember { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
 
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("退出对局？") },
+            text = { Text("退出后本局账目将丢失，确定退出吗？") },
+            confirmButton = {
+                TextButton(onClick = { onExit() }) { Text("退出", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showExitConfirm = false }) { Text("继续玩") } },
+        )
+    }
     if (showBill) {
         BillDialog(text = viewModel.exportBill(), onDismiss = { showBill = false })
     }
@@ -137,7 +157,7 @@ fun ZjhGameScreen(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onExit) { Text("退出", color = Color.White) }
+                TextButton(onClick = { showExitConfirm = true }) { Text("退出", color = Color.White) }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         if (aiIds.isEmpty()) "好友局 · 炸金花" else "人机标准局 · 炸金花",
@@ -163,6 +183,7 @@ fun ZjhGameScreen(
                 if (state.phase == Phase.SETTLED) {
                     SettledPanel(
                         result = state.lastResult!!,
+                        game = game,
                         players = viewModel.players,
                         scores = state.scores,
                         onNext = viewModel::nextRound,
@@ -173,6 +194,7 @@ fun ZjhGameScreen(
                         game = game,
                         players = viewModel.players,
                         showMyCards = state.showMyCards,
+                        round = state.round,
                     )
                 }
             }
@@ -200,6 +222,7 @@ private fun TableArea(
     game: ZjhBettingGame,
     players: List<Player>,
     showMyCards: Boolean,
+    round: Int,
 ) {
     val gs = game.state
     val actor = gs.turn
@@ -222,16 +245,18 @@ private fun TableArea(
             val x = (w * slot.x - seatW / 2).coerceAtLeast(0.dp)
             val y = (h * slot.y - seatH / 2).coerceAtLeast(0.dp)
             val isActorRevealed = p.id == actor && showMyCards
-            Seat(
-                player = p,
-                game = game,
-                isTurn = p.id == actor && !gs.over,
-                showCards = isActorRevealed,
-                cardW = if (isActorRevealed) cardW + 10.dp else cardW,
-                cardH = if (isActorRevealed) cardH + 14.dp else cardH,
-                overlap = overlap,
-                modifier = Modifier.offset(x = x, y = y),
-            )
+            key(round) {
+                Seat(
+                    player = p,
+                    game = game,
+                    isTurn = p.id == actor && !gs.over,
+                    showCards = isActorRevealed,
+                    cardW = if (isActorRevealed) cardW + 10.dp else cardW,
+                    cardH = if (isActorRevealed) cardH + 14.dp else cardH,
+                    overlap = overlap,
+                    modifier = Modifier.offset(x = x, y = y),
+                )
+            }
         }
 
         // 桌子中心：底池
@@ -291,13 +316,19 @@ private fun Seat(
             fontWeight = if (isTurn) FontWeight.Bold else FontWeight.Normal,
         )
         Spacer(Modifier.height(4.dp))
-        Row {
-            hand.forEachIndexed { i, card ->
-                val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
-                if (showCards && !folded) {
-                    CardFront(card = card, width = cardW, height = cardH, modifier = m)
-                } else {
-                    CardBack(width = cardW, height = cardH, dimmed = folded, modifier = m)
+        AnimatedVisibility(
+            visible = true,
+            enter = fadeIn(tween(280)) + scaleIn(initialScale = 0.6f, animationSpec = tween(280)),
+        ) {
+            Row {
+                hand.forEachIndexed { i, card ->
+                    val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
+                    val showFace = showCards && !folded
+                    if (showFace) {
+                        CardFront(card = card, width = cardW, height = cardH, modifier = m)
+                    } else {
+                        CardBack(width = cardW, height = cardH, dimmed = folded, modifier = m)
+                    }
                 }
             }
         }
@@ -419,6 +450,7 @@ private fun ActionBar(
 @Composable
 private fun SettledPanel(
     result: com.lanpoker.core.ledger.RoundResult,
+    game: ZjhBettingGame,
     players: List<Player>,
     scores: Map<Int, Int>,
     onNext: () -> Unit,
@@ -431,7 +463,7 @@ private fun SettledPanel(
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
             "${result.winnerName} 赢！",
             color = Gold,
@@ -443,6 +475,26 @@ private fun SettledPanel(
             color = Color.White,
             style = MaterialTheme.typography.titleMedium,
         )
+        result.winnerId?.let { wid ->
+            val idx = game.players.indexOfFirst { it.id == wid }
+            if (idx >= 0) {
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1B5E20),
+                    border = BorderStroke(2.dp, Gold),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        game.hands[idx].forEach { card ->
+                            CardFront(card = card, width = 44.dp, height = 62.dp)
+                        }
+                    }
+                }
+            }
+        }
         Spacer(Modifier.height(16.dp))
         Surface(shape = RoundedCornerShape(12.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {

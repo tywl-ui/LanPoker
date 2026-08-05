@@ -13,13 +13,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,10 +33,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lanpoker.core.config.GameConfig
 import com.lanpoker.core.config.GameType
+import com.lanpoker.core.zjh.TieRule
+import com.lanpoker.core.zjh.ZjhRules
 
 /** 游戏模式 */
 enum class GameMode(val label: String, val desc: String) {
@@ -44,7 +50,7 @@ enum class GameMode(val label: String, val desc: String) {
 
 @Composable
 fun ConfigScreen(
-    onStart: (GameConfig, GameMode, Int) -> Unit,
+    onStart: (GameConfig, GameMode, Int, List<String>, ZjhRules, TieRule) -> Unit,
     onOpenAiSettings: () -> Unit,
 ) {
     var gameType by remember { mutableStateOf(GameType.ZJH) }
@@ -55,10 +61,18 @@ fun ConfigScreen(
     var baseScore by remember { mutableIntStateOf(1) }
     var aiCount by remember { mutableIntStateOf(3) }
     var ddzHint by remember { mutableStateOf(false) }
+    var names by remember { mutableStateOf(listOf("玩家1", "玩家2", "玩家3", "玩家4")) }
+    var rule235 by remember { mutableStateOf(true) }
+    var tieRule by remember { mutableStateOf(TieRule.REDEAL) }
 
     val config = GameConfig(gameType, deckCount, playerCount, jokerCount, baseScore)
     val error = config.validate()
     val maxAi = playerCount - 1
+
+    fun onPlayerCountChanged(newCount: Int) {
+        playerCount = newCount
+        names = List(newCount) { i -> names.getOrElse(i) { "玩家${i + 1}" } }
+    }
 
     Column(
         modifier = Modifier
@@ -126,7 +140,7 @@ fun ConfigScreen(
         Spacer(Modifier.height(4.dp))
 
         StepperRow("牌副数", deckCount, { deckCount = it }, 1..3)
-        StepperRow("人数", playerCount, { playerCount = it }, 2..6)
+        StepperRow("人数", playerCount, ::onPlayerCountChanged, 2..6)
         if (mode != GameMode.FRIENDS) {
             StepperRow("AI 人数", aiCount, { aiCount = it }, 1..maxAi)
         }
@@ -140,6 +154,56 @@ fun ConfigScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        Spacer(Modifier.height(20.dp))
+        Text("玩家名称", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        names.forEachIndexed { i, name ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+                Text(
+                    if (mode != GameMode.FRIENDS && i < aiCount) "AI 座" else "座${i + 1}",
+                    modifier = Modifier.width(44.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { newName ->
+                        names = names.toMutableList().also { it[i] = newName }
+                    },
+                    label = { Text("名称（可空）") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        if (mode != GameMode.FRIENDS && aiCount > 0) {
+            Text(
+                "前 $aiCount 个座位为 AI 对手，其余为真人（共用手机轮流操作）",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+        Text("规则设置", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("杂色 235 吃豹子", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Switch(checked = rule235, onCheckedChange = { rule235 = it })
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("平局处理", style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TieRule.values().forEach { r ->
+                FilterChip(
+                    selected = tieRule == r,
+                    onClick = { tieRule = r },
+                    label = { Text(r.label) },
+                )
+            }
+        }
+
         Spacer(Modifier.height(24.dp))
         Text("规则速览", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
@@ -152,7 +216,7 @@ fun ConfigScreen(
                 RuleLine("底注", "开局每人自动下 1 底；闷牌跟注 = level 底，看牌 = 2×level 底")
                 RuleLine("加注", "倍数必须高于当前，可自填；看牌加注按 2 倍计")
                 RuleLine("比牌", "三家以上只能与已看牌者比；剩两家可与闷牌者开牌；平局发起者输")
-                RuleLine("牌型", "豹子 > 顺金 > 金花 > 顺子 > 对子 > 单张；杂色 235 吃豹子")
+                RuleLine("牌型", "豹子 > 顺金 > 金花 > 顺子 > 对子 > 单张${if (rule235) "；杂色 235 吃豹子" else ""}")
             }
         }
 
@@ -162,7 +226,16 @@ fun ConfigScreen(
             Spacer(Modifier.height(8.dp))
         }
         Button(
-            onClick = { onStart(config, mode, aiCount) },
+            onClick = {
+                onStart(
+                    config,
+                    mode,
+                    aiCount,
+                    names.map { it.trim() },
+                    ZjhRules(rule235EatsTriple = rule235),
+                    tieRule,
+                )
+            },
             enabled = error == null,
             modifier = Modifier.fillMaxWidth(),
         ) {
