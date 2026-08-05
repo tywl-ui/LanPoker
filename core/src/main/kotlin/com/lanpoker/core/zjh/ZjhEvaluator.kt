@@ -40,6 +40,8 @@ object ZjhEvaluator {
     /**
      * 判定 3 张牌。
      * 王为百搭：暴力枚举每个王可能代替的牌，取能组成最大牌型的组合。
+     * 注意：返回的 cards 永远是【真实手牌】（含王），只有 tie/type 来自最优组合，
+     * 避免亮牌/描述时把王显示成不存在的牌。
      */
     fun evaluate(hand: List<Card>, rules: ZjhRules = ZjhRules()): ZjhHand {
         require(hand.size == 3) { "炸金花每人 3 张牌" }
@@ -58,7 +60,8 @@ object ZjhEvaluator {
             for (v in variants) rec(idx + 1, cur + v)
         }
         rec(0, normals)
-        return best!!
+        // 用真实手牌替换枚举出的虚拟牌（type/tie 保留最优结果）
+        return best!!.copy(cards = hand)
     }
 
     /** 无王的判定 */

@@ -65,6 +65,26 @@ class ZjhBettingGameTest {
     }
 
     @Test
+    fun 加注不能超过上限() {
+        val g = game()
+        assertTrue(g.raise(10))
+        assertFalse(g.raise(11))
+        assertEquals(10, g.state.level)
+    }
+
+    @Test
+    fun 看牌后加注按新level的2倍补齐() {
+        val g = game()
+        g.look()      // 甲看牌
+        g.raise(3)    // 甲看牌加到3 → 6底
+        assertEquals(6, g.state.stakes[1])
+        g.call()      // 乙闷跟3
+        g.call()      // 丙闷跟3
+        g.raise(4)    // 甲再次加到4 → 看牌 8底（更高）
+        assertEquals(8, g.state.stakes[1])
+    }
+
+    @Test
     fun 加注提高level() {
         val g = game()
         g.raise(3)

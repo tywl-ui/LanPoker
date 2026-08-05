@@ -109,6 +109,22 @@ class ZjhEvaluatorTest {
     }
 
     @Test
+    fun 王百搭亮牌显示真实手牌() {
+        val hand = listOf(Card.Joker(false), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART))
+        val h = ZjhEvaluator.evaluate(hand)
+        // 牌组必须还是真实手牌（含王），不能显示枚举出的假牌
+        assertEquals(hand, h.cards)
+        assertEquals("豹子小王A♠A♥", ZjhEvaluator.describe(h))
+    }
+
+    @Test
+    fun 王加23优先顺子而不是235() {
+        val h = ZjhEvaluator.evaluate(listOf(Card.Joker(false), p(Rank.TWO, Suit.SPADE), p(Rank.THREE, Suit.HEART)))
+        // 王=4 → 234 顺子，比 235 大（235 只吃豹子）
+        assertEquals(ZjhHandType.STRAIGHT, h.type)
+    }
+
+    @Test
     fun 双王单A取最大牌型() {
         val h = ZjhEvaluator.evaluate(listOf(Card.Joker(false), Card.Joker(true), p(Rank.ACE, Suit.SPADE)))
         assertEquals(ZjhHandType.TRIPLE, h.type)
@@ -182,6 +198,17 @@ class ZjhEvaluatorTest {
             ZjhEvaluator.evaluate(listOf(p(Rank.TWO, Suit.SPADE), p(Rank.TWO, Suit.HEART), p(Rank.THREE, Suit.CLUB))),
         )
         assertEquals(1, ZjhEvaluator.strongestIndex(hands, TieRule.REDEAL))
+    }
+
+    @Test
+    fun 多人中任意两人平局则整体重发() {
+        // 甲、乙同点数对K，丙单张 → 全局和局
+        val hands = listOf(
+            ZjhEvaluator.evaluate(listOf(p(Rank.KING, Suit.SPADE), p(Rank.KING, Suit.HEART), p(Rank.NINE, Suit.CLUB))),
+            ZjhEvaluator.evaluate(listOf(p(Rank.KING, Suit.CLUB), p(Rank.KING, Suit.DIAMOND), p(Rank.NINE, Suit.SPADE))),
+            ZjhEvaluator.evaluate(listOf(p(Rank.ACE, Suit.SPADE), p(Rank.QUEEN, Suit.HEART), p(Rank.TEN, Suit.CLUB))),
+        )
+        assertEquals(null, ZjhEvaluator.strongestIndex(hands, TieRule.REDEAL))
     }
 
     @Test
