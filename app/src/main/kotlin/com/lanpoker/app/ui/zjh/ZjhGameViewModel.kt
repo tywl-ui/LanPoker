@@ -178,38 +178,48 @@ class ZjhGameViewModel(
         }
     }
 
+    /** 防止 AI 循环重复启动（比牌结算路径会触发 runAiIfNeeded） */
+    private var aiLoopActive = false
+
     /** 轮到 AI 时自动决策（AI 连打直到轮到真人或结束） */
     private fun runAiIfNeeded() {
         val gs = state.game.state
         if (gs.over || gs.turn !in aiIds) return
         val engine = aiEngine ?: return
+        if (aiLoopActive) return
+        aiLoopActive = true
         viewModelScope.launch {
-            state = state.copy(aiThinking = true)
-            while (true) {
-                val s = state.game.state
-                if (s.over) break
-                if (s.turn !in aiIds) break
-                if (state.pendingCompare != null) break
-                delay(1100)
-                val id = s.turn
-                val hand = state.game.handOf(id)
-                val decision = engine.decideBetting(
-                    hand = hand,
-                    gs = s,
-                    myId = id,
-                    players = players,
-                    base = config.baseScore,
-                    maxLevel = state.game.maxLevel,
-                )
-                val applied = applyDecision(id, decision)
-                if (!applied) {
-                    // 非法决策（比如重复看牌）→ 兜底：跟注或弃牌
-                    if (id in state.game.state.looked) state.game.call() else state.game.look()
+            try {
+                state = state.copy(aiThinking = true)
+                while (true) {
+                    val s = state.game.state
+                    if (s.over) break
+                    if (s.turn !in aiIds) break
+                    if (state.pendingCompare != null) break
+                    delay(1100)
+                    val id = s.turn
+                    val hand = state.game.handOf(id)
+                    val decision = engine.decideBetting(
+                        hand = hand,
+                        gs = s,
+                        myId = id,
+                        players = players,
+                        base = config.baseScore,
+                        maxLevel = state.game.maxLevel,
+                    )
+                    val applied = applyDecision(id, decision)
+                    if (!applied) {
+                        // 非法决策（比如重复看牌）→ 兜底：跟注或弃牌
+                        if (id in state.game.state.looked) state.game.call() else state.game.look()
+                    }
                 }
+            } finally {
+                aiLoopActive = false
+                state = state.copy(aiThinking = false)
             }
-            state = state.copy(aiThinking = false)
             val g = state.game
-            if (g.state.over) {
+            // 防止重复结算（比牌路径已在 afterAction 结算过）
+            if (g.state.over && state.phase == Phase.BETTING) {
                 val result = ledger.settleRound(
                     winnerId = g.state.winnerId,
                     winnerHandLabel = g.state.winnerLabel,
