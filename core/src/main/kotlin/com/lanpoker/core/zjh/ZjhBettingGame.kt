@@ -119,17 +119,22 @@ class ZjhBettingGame(
 
     /**
      * 比牌：与 target 比大小，输者弃牌；平局发起者输。
-     * 规则：三家以上时只能和【已看牌】的玩家比牌，不能和闷牌的比；
+     * 规则：双方各付比牌费（闷牌付 1×level，看牌付 2×level）；
+     * 三家以上时只能和【已看牌】的玩家比牌，不能和闷牌的比；
      * 仅剩两家时，看牌/闷牌双方可以互相开牌。
      */
     fun compare(targetId: Int): Boolean {
         val id = _state.turn
         if (_state.over || id in _state.folded || targetId == id || targetId in _state.folded) return false
         if (activeCount() > 2 && targetId !in _state.looked) return false
+        // 比牌费：双方各自按自己的闷/看档位支付
         val fee = requiredBase(id) * base
+        val feeTarget = requiredBase(targetId) * base
         val challengerLoses = ZjhEvaluator.compare(evaluated.getValue(id), evaluated.getValue(targetId)) <= 0
         val loser = if (challengerLoses) id else targetId
-        val newStakes = _state.stakes + (id to stakeOf(id) + fee)
+        val newStakes = _state.stakes
+            .plus(id to stakeOf(id) + fee)
+            .plus(targetId to stakeOf(targetId) + feeTarget)
         _state = _state.copy(
             stakes = newStakes,
             folded = _state.folded + loser,

@@ -171,14 +171,15 @@ class ZjhBettingGameTest {
     }
 
     @Test
-    fun 比牌收比牌费() {
+    fun 比牌双方各付比牌费() {
         val g = game()
-        g.call()      // 甲过
+        g.call()      // 甲过（底注1）
         g.look()      // 乙看牌
         g.call()      // 乙看跟 2底
         g.call()      // 丙过
-        g.compare(2)  // 甲(闷)比牌费1底，甲输
-        assertEquals(2, g.state.stakes[1])
+        g.compare(2)  // 甲(闷)发起比牌：甲付1底，乙(看牌)付2底；甲输
+        assertEquals(2, g.state.stakes[1]) // 甲 1+1
+        assertEquals(4, g.state.stakes[2]) // 乙 2+2
         assertFalse(g.state.over)
         g.fold()      // 乙弃
         assertTrue(g.state.over)
