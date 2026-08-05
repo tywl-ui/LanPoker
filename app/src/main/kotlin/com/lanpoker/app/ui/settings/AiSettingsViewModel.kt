@@ -41,16 +41,17 @@ class AiSettingsViewModel : ViewModel() {
         AiPrefs.save(context, AiConfig(state.baseUrl, state.apiKey, state.model, state.useLlm))
     }
 
-    suspend fun testConnection(context: Context): Boolean {
+    /** @return null 表示连接成功，否则返回错误原因 */
+    suspend fun testConnection(context: Context): String? {
         val cfg = AiConfig(state.baseUrl, state.apiKey, state.model, useLlm = true)
-        if (!cfg.isUsable()) return false
+        if (!cfg.isUsable()) return "请先填写 API 地址、Key 和模型名"
         return withContext(Dispatchers.IO) {
             try {
                 val client = LlmClient(cfg)
-                val reply = client.chat("你是一个测试助手", "回复：OK")
-                !reply.isNullOrBlank()
+                val reply = client.chat("你是一个测试助手", "只回复：OK")
+                if (reply.isNullOrBlank()) "连上了但响应异常（模型名是否正确？）" else null
             } catch (e: Exception) {
-                false
+                e.message ?: "连接失败"
             }
         }
     }

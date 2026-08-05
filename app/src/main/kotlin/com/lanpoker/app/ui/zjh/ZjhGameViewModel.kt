@@ -44,6 +44,11 @@ class ZjhGameViewModel(
     var state by mutableStateOf(newRoundState())
         private set
 
+    init {
+        // 首回合可能是 AI：进场立即驱动 AI 行动，否则人机局会卡死
+        runAiIfNeeded()
+    }
+
     private fun newRoundState(): UiState {
         val deck = Deck.build(config.deckCount, config.jokerCount)
         val (hands, _) = deck.deal(handSize = 3, playerCount = players.size)

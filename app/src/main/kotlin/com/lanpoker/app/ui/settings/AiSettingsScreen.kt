@@ -117,11 +117,11 @@ fun AiSettingsScreen(
             onClick = {
                 scope.launch {
                     testing = true
-                    val ok = viewModel.testConnection(context)
+                    val err = viewModel.testConnection(context)
                     testing = false
                     Toast.makeText(
                         context,
-                        if (ok) "连接成功，AI 已可用" else "连接失败（已保存？Key 是否正确？）",
+                        if (err == null) "连接成功，AI 已可用" else "连接失败：$err",
                         Toast.LENGTH_LONG,
                     ).show()
                 }

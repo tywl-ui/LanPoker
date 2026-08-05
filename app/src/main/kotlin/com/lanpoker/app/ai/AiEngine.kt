@@ -10,11 +10,26 @@ import com.lanpoker.core.zjh.ZjhHand
 
 /**
  * AI 决策引擎：配置了大模型 API 就走 LLM，否则用内置启发式 AI 兜底。
+ * LLM 调用失败一次后本局自动切换内置 AI（熔断），避免每回合干等超时。
  */
 class AiEngine(
     private val config: AiConfig,
 ) {
     private val llm: LlmClient? = if (config.isUsable()) LlmClient(config) else null
+
+    /** LLM 已失败次数；达到阈值后本局不再请求，直接用启发式 */
+    private var llmFailures = 0
+    private val failureLimit = 1
+
+    private suspend fun llmChat(system: String, prompt: String): String? {
+        val client = llm ?: return null
+        if (llmFailures >= failureLimit) return null
+        val answer = client.chat(system, prompt)
+        if (answer == null) llmFailures++
+        return answer
+    }
+
+    val usingLlm: Boolean get() = llm != null && llmFailures < failureLimit
 
     /** 标准局决策 */
     suspend fun decideBetting(
@@ -26,12 +41,11 @@ class AiEngine(
         maxLevel: Int,
     ): AiDecision {
         val heuristic = HeuristicAi.decideBetting(hand, gs, myId, base, maxLevel)
-        val llm = llm ?: return heuristic
-        val answer = llm.chat(
+        val answer = llmChat(
             system = SYSTEM_PROMPT,
             prompt = buildBettingPrompt(hand, gs, myId, players, base),
         )
-        val parsed = llm.parseDecision(answer)
+        val parsed = answer?.let { LlmClient.parseDecisionStatic(it) }
         if (parsed == null || !validate(parsed, gs, myId, maxLevel, players)) return heuristic
         return parsed
     }
@@ -40,12 +54,11 @@ class AiEngine(
     suspend fun decideQuickLook(hand: ZjhHand, gs: ZjhQuickSnapshot): Boolean {
         val strength = HeuristicAi.strength(hand)
         val heuristic = HeuristicAi.decideQuickLook(strength)
-        val llm = llm ?: return heuristic
-        val answer = llm.chat(
+        val answer = llmChat(
             system = SYSTEM_PROMPT,
             prompt = buildQuickPrompt(hand, gs),
         )
-        val parsed = llm.parseQuickLook(answer)
+        val parsed = answer?.let { LlmClient.parseQuickLookStatic(it) }
         return parsed ?: heuristic
     }
 

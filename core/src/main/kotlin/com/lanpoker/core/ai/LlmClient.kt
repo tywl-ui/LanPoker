@@ -16,7 +16,10 @@ class LlmClient(
     private val config: AiConfig,
 ) {
     suspend fun chat(system: String, prompt: String): String? = withContext(Dispatchers.IO) {
-        val base = config.baseUrl.trim().trimEnd('/')
+        // 容错：用户可能粘贴了带 /v1 或完整 /chat/completions 的地址
+        var base = config.baseUrl.trim().trimEnd('/')
+        base = base.removeSuffix("/chat/completions")
+        base = base.removeSuffix("/v1")
         val url = URL("$base/chat/completions")
         val body = buildString {
             append("{\"model\":\"").append(escape(config.model))
@@ -27,8 +30,8 @@ class LlmClient(
         try {
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 45_000
+            conn.connectTimeout = 8_000
+            conn.readTimeout = 20_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             conn.setRequestProperty("Authorization", "Bearer ${config.apiKey}")
@@ -53,43 +56,50 @@ class LlmClient(
             .replace("\\u003e", ">")
     }
 
-    /** 从模型回答里解析出决策 JSON（容忍前后废话/代码块标记） */
-    fun parseDecision(text: String?): AiDecision? {
-        if (text.isNullOrBlank()) return null
-        var json = text
-        // 去掉 ```json ``` 包裹
-        json = json.replace(Regex("```(?:json)?\\s*"), "").replace("```", "")
-        val start = json.indexOf('{')
-        val end = json.lastIndexOf('}')
-        if (start < 0 || end <= start) return null
-        json = json.substring(start, end + 1)
+    /** 兼容测试用的实例方法 */
+    fun parseDecision(text: String?): AiDecision? = parseDecisionStatic(text)
 
-        fun field(name: String): String? =
-            Regex("\"$name\"\\s*:\\s*\"?([^\",}\\s]+)").find(json)?.groupValues?.get(1)
+    fun parseQuickLook(text: String?): Boolean? = parseQuickLookStatic(text)
 
-        return when (field("action")) {
-            "look" -> AiDecision(AiActionType.LOOK, reason = field("reason") ?: "")
-            "call" -> AiDecision(AiActionType.CALL, reason = field("reason") ?: "")
-            "fold" -> AiDecision(AiActionType.FOLD, reason = field("reason") ?: "")
-            "raise" -> AiDecision(
-                AiActionType.RAISE,
-                level = field("level")?.toIntOrNull(),
-                reason = field("reason") ?: "",
-            )
-            "compare" -> AiDecision(
-                AiActionType.COMPARE,
-                targetId = field("target")?.toIntOrNull(),
-                reason = field("reason") ?: "",
-            )
-            else -> null
+    companion object {
+        /** 从模型回答里解析出决策 JSON（容忍前后废话/代码块标记） */
+        fun parseDecisionStatic(text: String?): AiDecision? {
+            if (text.isNullOrBlank()) return null
+            var json = text
+            // 去掉 ```json ``` 包裹
+            json = json.replace(Regex("```(?:json)?\\s*"), "").replace("```", "")
+            val start = json.indexOf('{')
+            val end = json.lastIndexOf('}')
+            if (start < 0 || end <= start) return null
+            json = json.substring(start, end + 1)
+
+            fun field(name: String): String? =
+                Regex("\"$name\"\\s*:\\s*\"?([^\",}\\s]+)").find(json)?.groupValues?.get(1)
+
+            return when (field("action")) {
+                "look" -> AiDecision(AiActionType.LOOK, reason = field("reason") ?: "")
+                "call" -> AiDecision(AiActionType.CALL, reason = field("reason") ?: "")
+                "fold" -> AiDecision(AiActionType.FOLD, reason = field("reason") ?: "")
+                "raise" -> AiDecision(
+                    AiActionType.RAISE,
+                    level = field("level")?.toIntOrNull(),
+                    reason = field("reason") ?: "",
+                )
+                "compare" -> AiDecision(
+                    AiActionType.COMPARE,
+                    targetId = field("target")?.toIntOrNull(),
+                    reason = field("reason") ?: "",
+                )
+                else -> null
+            }
         }
-    }
 
-    fun parseQuickLook(text: String?): Boolean? {
-        if (text.isNullOrBlank()) return null
-        var json = text
-        json = json.replace(Regex("```(?:json)?\\s*"), "").replace("```", "")
-        return Regex("\"look\"\\s*:\\s*(true|false)").find(json)?.groupValues?.get(1)?.toBoolean()
+        fun parseQuickLookStatic(text: String?): Boolean? {
+            if (text.isNullOrBlank()) return null
+            var json = text
+            json = json.replace(Regex("```(?:json)?\\s*"), "").replace("```", "")
+            return Regex("\"look\"\\s*:\\s*(true|false)").find(json)?.groupValues?.get(1)?.toBoolean()
+        }
     }
 
     private fun escape(s: String) = s
