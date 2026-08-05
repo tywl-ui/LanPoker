@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lanpoker.app.ai.AiEngine
 import com.lanpoker.app.sound.SoundFx
+import com.lanpoker.app.ui.common.ActionBanner
 import com.lanpoker.app.ui.common.Avatar
 import com.lanpoker.app.ui.common.CardBack
 import com.lanpoker.app.ui.common.CardFront
@@ -66,6 +67,7 @@ import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.zjh.TieRule
 import com.lanpoker.core.zjh.ZjhQuickGame
 import com.lanpoker.core.zjh.ZjhRules
+import kotlinx.coroutines.delay
 
 private fun quickSlotsFor(total: Int): List<androidx.compose.ui.geometry.Offset> = when (total) {
     2 -> listOf(Offset(0.5f, 0.82f), Offset(0.5f, 0.12f))
@@ -107,6 +109,21 @@ fun ZjhQuickScreen(
     }
     LaunchedEffect(state.phase) {
         if (state.phase == QuickPhase.REVEAL) SoundFx.play("win")
+    }
+
+    // 真人回合倒计时（看牌展示期间暂停）
+    var secondsLeft by remember { mutableStateOf(15) }
+    val chooserId = state.game.currentChooser?.id
+    LaunchedEffect(chooserId, state.showMyCards, state.phase) {
+        if (state.phase != QuickPhase.CHOOSE || state.showMyCards) return@LaunchedEffect
+        val c = state.game.currentChooser ?: return@LaunchedEffect
+        if (c.id in aiIds) return@LaunchedEffect
+        secondsLeft = 15
+        while (secondsLeft > 0) {
+            delay(1000)
+            secondsLeft--
+        }
+        viewModel.autoAct()
     }
 
     if (showExitConfirm) {
@@ -157,6 +174,11 @@ fun ZjhQuickScreen(
                     .fillMaxWidth(),
             ) {
                 TableBackground(modifier = Modifier.fillMaxSize())
+                ActionBanner(
+                    action = state.lastAction,
+                    key = state.lastAction,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
                 if (state.phase == QuickPhase.REVEAL) {
                     QuickSettledPanel(
                         state = state,
@@ -172,6 +194,7 @@ fun ZjhQuickScreen(
             QuickActionBar(
                 state = state,
                 aiIds = aiIds,
+                secondsLeft = secondsLeft,
                 onChoose = viewModel::choose,
             )
         }
@@ -302,6 +325,7 @@ private fun QuickSeat(
 private fun QuickActionBar(
     state: QuickUiState,
     aiIds: Set<Int>,
+    secondsLeft: Int,
     onChoose: (Boolean) -> Unit,
 ) {
     val chooser = state.game.currentChooser
@@ -329,6 +353,11 @@ private fun QuickActionBar(
                         "轮到你：${chooser.name}（每人固定倍数，选完自动亮牌）",
                         color = Color.White,
                         style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        "剩余 ${secondsLeft} 秒自动闷牌",
+                        color = Color(0xFFFF8A80),
+                        style = MaterialTheme.typography.labelSmall,
                     )
                     Spacer(Modifier.height(8.dp))
                     FlowRow(

@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lanpoker.app.ai.AiEngine
 import com.lanpoker.app.sound.SoundFx
+import com.lanpoker.app.ui.common.ActionBanner
 import com.lanpoker.app.ui.common.Avatar
 import com.lanpoker.app.ui.common.CardBack
 import com.lanpoker.app.ui.common.CardFront
@@ -189,6 +190,22 @@ fun ZjhGameScreen(
             viewModel.dismissCompareShowdown()
         }
     }
+
+    // 真人回合倒计时（对决特效/选型弹窗期间暂停）
+    var secondsLeft by remember { mutableStateOf(20) }
+    val turnKey = state.game.state.turn
+    val paused = state.pendingCompare != null || compareEvent != null
+    LaunchedEffect(turnKey, paused, state.phase) {
+        if (state.phase != Phase.BETTING || paused) return@LaunchedEffect
+        val actor = viewModel.players.firstOrNull { it.id == turnKey }
+        if (actor == null || actor.id in aiIds) return@LaunchedEffect
+        secondsLeft = 20
+        while (secondsLeft > 0) {
+            delay(1000)
+            secondsLeft--
+        }
+        viewModel.autoAct()
+    }
     if (compareEvent != null && state.phase == Phase.BETTING) {
         val challenger = viewModel.players.firstOrNull { it.id == compareEvent.challengerId }
         val target = viewModel.players.firstOrNull { it.id == compareEvent.targetId }
@@ -240,6 +257,11 @@ fun ZjhGameScreen(
                     .fillMaxWidth(),
             ) {
                 TableBackground(modifier = Modifier.fillMaxSize())
+                ActionBanner(
+                    action = state.game.state.lastAction,
+                    key = state.game.state.lastAction,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
                 if (state.phase == Phase.SETTLED) {
                     SettledPanel(
                         result = state.lastResult!!,
@@ -264,6 +286,8 @@ fun ZjhGameScreen(
                 players = viewModel.players,
                 aiIds = aiIds,
                 showMyCards = state.showMyCards,
+                secondsLeft = secondsLeft,
+                paused = paused,
                 onLook = viewModel::look,
                 onHide = viewModel::hideCards,
                 onCall = viewModel::call,
@@ -338,6 +362,11 @@ private fun TableArea(
                 ) {
                     ChipStack(pot = game.pot())
                     Text("底池 ${game.pot()} 分", color = Gold, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "第 ${gs.bettingRounds + 1} 轮下注${if (!game.canCompare()) " · 比牌需满3轮" else ""}",
+                        color = Color.White.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -442,6 +471,8 @@ private fun ActionBar(
     players: List<Player>,
     aiIds: Set<Int>,
     showMyCards: Boolean,
+    secondsLeft: Int,
+    paused: Boolean,
     onLook: () -> Unit,
     onHide: () -> Unit,
     onCall: () -> Unit,
@@ -478,6 +509,13 @@ private fun ActionBar(
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }
+                    if (!paused) {
+                        Text(
+                            "剩余 ${secondsLeft} 秒自动跟注",
+                            color = if (secondsLeft <= 5) Color(0xFFFF8A80) else Color.White.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -499,8 +537,16 @@ private fun ActionBar(
                         OutlinedButton(onClick = onRaise, border = BorderStroke(1.dp, Color.White)) {
                             Text("加注", color = Color.White)
                         }
-                        OutlinedButton(onClick = onCompare, border = BorderStroke(1.dp, Color.White)) {
-                            Text("比牌", color = Color.White)
+                        val roundsLeft = state.game.roundsToCompare()
+                        OutlinedButton(
+                            onClick = onCompare,
+                            enabled = roundsLeft == 0,
+                            border = BorderStroke(1.dp, Color.White),
+                        ) {
+                            Text(
+                                if (roundsLeft > 0) "比牌（${roundsLeft}轮后）" else "比牌",
+                                color = if (roundsLeft > 0) Color.White.copy(alpha = 0.45f) else Color.White,
+                            )
                         }
                         Button(
                             onClick = onFold,

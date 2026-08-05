@@ -37,6 +37,10 @@ class ZjhBettingGame(
         val jokerLock: Map<Int, ZjhHand> = emptyMap(),
         /** 最近一次比牌的双方与胜负（供对决特效展示） */
         val lastCompare: CompareEvent? = null,
+        /** 已完成的下注轮数（全员行动完一轮 +1）；比牌需满 3 轮 */
+        val bettingRounds: Int = 0,
+        /** 本轮已行动过的玩家 */
+        val actedThisRound: Set<Int> = emptySet(),
     )
 
     /** 比牌事件：谁和谁比、各自牌型、谁输 */
@@ -145,7 +149,7 @@ class ZjhBettingGame(
         if (stakeOf(id) < req) {
             _state = _state.copy(
                 stakes = _state.stakes + (id to req),
-                lastAction = "${name(id)} 跟注 $req",
+                lastAction = "${name(id)} 跟注 ${req}分（${req / base}底）",
             )
         } else {
             _state = _state.copy(lastAction = "${name(id)} 过")
@@ -163,7 +167,7 @@ class ZjhBettingGame(
         _state = _state.copy(
             level = newLevel,
             stakes = _state.stakes + (id to stake),
-            lastAction = "${name(id)} 加注到 $newLevel 倍",
+            lastAction = "${name(id)} 加注到 ${newLevel}倍（$stake 分）",
         )
         advance()
         return true
@@ -180,6 +184,12 @@ class ZjhBettingGame(
         if (activeCount() == 1) finish() else advance()
         return true
     }
+
+    /** 比牌是否已解锁（下注满 3 轮） */
+    fun canCompare(): Boolean = _state.bettingRounds >= 3
+
+    /** 剩余还需几轮才能比牌 */
+    fun roundsToCompare(): Int = (3 - _state.bettingRounds).coerceAtLeast(0)
 
     /** 比牌结果：RESOLVED 已定胜负；AWAITING_TARGET 需对方再选牌型 */
     enum class CompareStep { RESOLVED, AWAITING_TARGET }
@@ -198,6 +208,8 @@ class ZjhBettingGame(
         val id = _state.turn
         if (_state.over || id in _state.folded || targetId == id || targetId in _state.folded) return null
         if (activeCount() > 2 && targetId !in _state.looked) return null
+        // 下注满 3 轮才允许比牌
+        if (!canCompare()) return null
         if (challengerHand != null && challengerHand !in transforms.getValue(id)) return null
 
         val cHand = challengerHand ?: bestEval.getValue(id)
@@ -310,7 +322,19 @@ class ZjhBettingGame(
         while (i != cur && players[i].id in _state.folded) {
             i = (i + 1) % players.size
         }
-        _state = _state.copy(turn = players[i].id)
+        // 下注轮次：本轮所有未弃牌玩家都行动过后 +1
+        val newActed = _state.actedThisRound + _state.turn
+        val active = players.filter { it.id !in _state.folded }.map { it.id }.toSet()
+        val complete = active.isNotEmpty() && active.all { it in newActed }
+        _state = if (complete) {
+            _state.copy(
+                turn = players[i].id,
+                actedThisRound = emptySet(),
+                bettingRounds = _state.bettingRounds + 1,
+            )
+        } else {
+            _state.copy(turn = players[i].id, actedThisRound = newActed)
+        }
     }
 
     private fun finish() {

@@ -7,6 +7,8 @@ import com.lanpoker.core.ledger.Player
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ZjhBettingGameTest {
@@ -23,6 +25,41 @@ class ZjhBettingGameTest {
         base: Int = 1,
         rules: ZjhRules = ZjhRules(),
     ) = ZjhBettingGame(players, hands, base, rules)
+
+    /** 连续跟注直到下注满 3 轮（解锁比牌） */
+    private fun ZjhBettingGame.unlockCompare() {
+        while (!state.over && state.bettingRounds < 3) {
+            call()
+        }
+    }
+
+    @Test
+    fun 下注满3轮才能比牌() {
+        val g = game(players = listOf(Player(1, "甲"), Player(2, "乙")))
+        assertFalse(g.canCompare())
+        assertEquals(null, g.beginCompare(2, null))
+        g.call(); g.call() // 第1轮
+        assertFalse(g.canCompare())
+        g.call(); g.call() // 第2轮
+        assertFalse(g.canCompare())
+        g.call(); g.call() // 第3轮
+        assertTrue(g.canCompare())
+        assertEquals(3, g.state.bettingRounds)
+        assertNotNull(g.beginCompare(2, null))
+    }
+
+    @Test
+    fun 下注轮次随行动推进() {
+        val g = game()
+        g.call() // 甲
+        g.call() // 乙
+        g.call() // 丙 → 第1轮完成
+        assertEquals(1, g.state.bettingRounds)
+        g.call() // 甲
+        g.call() // 乙
+        g.call() // 丙 → 第2轮完成
+        assertEquals(2, g.state.bettingRounds)
+    }
 
     @Test
     fun 开局每人自动下底注() {
@@ -131,6 +168,7 @@ class ZjhBettingGameTest {
     @Test
     fun 比牌赢家留下() {
         val g = game()
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.look() // 乙看牌
         g.call() // 乙看跟 2底
@@ -144,6 +182,7 @@ class ZjhBettingGameTest {
     @Test
     fun 比牌输者弃() {
         val g = game()
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call()
         g.look() // 乙看牌
         g.call() // 乙看跟
@@ -162,6 +201,7 @@ class ZjhBettingGameTest {
                 listOf(p(Rank.THREE, Suit.SPADE), p(Rank.FOUR, Suit.HEART), p(Rank.FIVE, Suit.CLUB)),
             ),
         )
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call()
         g.look() // 乙看牌
         g.call() // 乙看跟
@@ -174,6 +214,7 @@ class ZjhBettingGameTest {
     @Test
     fun 比牌双方各付比牌费() {
         val g = game()
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call()      // 甲过（底注1）
         g.look()      // 乙看牌
         g.call()      // 乙看跟 2底
@@ -190,6 +231,7 @@ class ZjhBettingGameTest {
     @Test
     fun 三家以上不能与闷牌者比牌() {
         val g = game()
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.call() // 乙过
         g.call() // 丙过
@@ -202,6 +244,7 @@ class ZjhBettingGameTest {
     @Test
     fun 三家以上可与看牌者比牌() {
         val g = game()
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call()      // 甲过
         g.look()      // 乙看牌
         g.call()      // 乙看跟 2底
@@ -214,6 +257,7 @@ class ZjhBettingGameTest {
     @Test
     fun 仅剩两家可与闷牌者开牌() {
         val g = game()
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.call() // 乙过
         g.call() // 丙过
@@ -234,6 +278,7 @@ class ZjhBettingGameTest {
                 listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)), // 丙 单张
             ),
         )
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.look() // 乙看牌
         g.call() // 乙看跟
@@ -256,6 +301,7 @@ class ZjhBettingGameTest {
                 listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
             ),
         )
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.look() // 乙看牌
         g.call() // 乙看跟
@@ -282,6 +328,7 @@ class ZjhBettingGameTest {
             ),
             rules = ZjhRules(rule235EatsTriple = false),
         )
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.look() // 乙看牌
         g.call() // 乙看跟
@@ -302,6 +349,7 @@ class ZjhBettingGameTest {
                 listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
             ),
         )
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.look() // 乙看牌
         g.call() // 乙看跟
@@ -323,6 +371,7 @@ class ZjhBettingGameTest {
                 listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
             ),
         )
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call() // 甲过
         g.look() // 乙看牌
         g.call() // 乙看跟
@@ -343,6 +392,7 @@ class ZjhBettingGameTest {
                 listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
             ),
         )
+        g.unlockCompare() // 下注满 3 轮后才能比牌
         g.call()
         g.look() // 乙看牌
         g.call()

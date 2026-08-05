@@ -157,6 +157,18 @@ class ZjhGameViewModel(
         state = state.copy(pendingCompare = null)
     }
 
+    /** 倒计时结束自动行动：跟注（跟够则过），保证不卡局 */
+    fun autoAct() {
+        val g = state.game
+        if (state.phase != Phase.BETTING) return
+        val id = g.state.turn
+        if (g.state.over || id in g.state.folded || id in aiIds) return
+        if (state.pendingCompare != null) return
+        if (state.game.state.lastCompare != null) return
+        g.call()
+        afterAction()
+    }
+
     /** 对决特效展示完毕，清除比牌事件 */
     fun dismissCompareShowdown() {
         state.game.clearCompareEvent()

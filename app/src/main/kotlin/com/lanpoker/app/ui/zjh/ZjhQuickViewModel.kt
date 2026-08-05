@@ -30,6 +30,7 @@ data class QuickUiState(
     val scores: Map<Int, Int>,
     val round: Int,
     val aiThinking: Boolean,
+    val lastAction: String? = null,
 )
 
 /**
@@ -84,12 +85,29 @@ class ZjhQuickViewModel(
                 state = state.copy(showMyCards = false)
                 if (state.game.allChosen) return@launch
                 if (!state.game.choose(chooser.id, true)) return@launch
+                recordAction(chooser.name, looked = true)
                 afterChoose()
             }
         } else {
             if (!state.game.choose(chooser.id, false)) return
+            recordAction(chooser.name, looked = false)
             afterChoose()
         }
+    }
+
+    /** 倒计时结束自动闷牌 */
+    fun autoAct() {
+        val chooser = state.game.currentChooser ?: return
+        if (chooser.id in aiIds) return
+        if (state.phase != QuickPhase.CHOOSE) return
+        if (!state.game.choose(chooser.id, false)) return
+        recordAction(chooser.name, looked = false)
+        afterChoose()
+    }
+
+    private fun recordAction(name: String, looked: Boolean) {
+        val stake = if (looked) 2 * config.baseScore else config.baseScore
+        state = state.copy(lastAction = "$name ${if (looked) "看牌" else "闷牌"} $stake 分")
     }
 
     private fun afterChoose() {
@@ -119,6 +137,7 @@ class ZjhQuickViewModel(
                 )
                 val look = aiEngine.decideQuickLook(hand, snapshot)
                 if (!state.game.choose(c.id, look)) break
+                recordAction(c.name, looked = look)
             }
             state = state.copy(aiThinking = false)
             if (state.game.allChosen) settle()
