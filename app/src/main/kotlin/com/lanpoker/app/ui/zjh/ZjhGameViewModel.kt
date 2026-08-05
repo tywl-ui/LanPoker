@@ -16,11 +16,20 @@ import com.lanpoker.core.ledger.LedgerSession
 import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.ledger.RoundResult
 import com.lanpoker.core.zjh.ZjhBettingGame
+import com.lanpoker.core.zjh.ZjhEvaluator
+import com.lanpoker.core.zjh.ZjhHand
 import com.lanpoker.core.zjh.ZjhRules
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class Phase { BETTING, SETTLED }
+
+/** 王比牌选型待定：发起者先选 / 防守方在能赢的范围内选 */
+data class PendingCompare(
+    val targetId: Int,
+    val options: List<com.lanpoker.core.zjh.ZjhHand>,
+    val isTargetPick: Boolean,
+)
 
 data class UiState(
     val phase: Phase,
@@ -30,6 +39,7 @@ data class UiState(
     val scores: Map<Int, Int>,
     val round: Int,
     val aiThinking: Boolean,
+    val pendingCompare: PendingCompare? = null,
 )
 
 class ZjhGameViewModel(
@@ -89,7 +99,55 @@ class ZjhGameViewModel(
     }
 
     fun compare(targetId: Int) {
-        if (state.game.compare(targetId)) afterAction()
+        val g = state.game
+        val id = g.state.turn
+        if (!g.hasJoker(id)) {
+            beginCompareFlow(targetId, null)
+            return
+        }
+        // 有王：先自选牌型（AI 自动选最强，真人弹窗选）
+        val options = g.transformsOf(id)
+        if (id in aiIds) {
+            val pick = options.maxWithOrNull(Comparator { a, b -> ZjhEvaluator.compare(a, b) })
+            if (pick != null) beginCompareFlow(targetId, pick)
+        } else {
+            state = state.copy(pendingCompare = PendingCompare(targetId, options, isTargetPick = false))
+        }
+    }
+
+    private fun beginCompareFlow(targetId: Int, challengerHand: ZjhHand?) {
+        val g = state.game
+        val result = g.beginCompare(targetId, challengerHand) ?: return
+        when (result.step) {
+            ZjhBettingGame.CompareStep.RESOLVED -> afterAction()
+            ZjhBettingGame.CompareStep.AWAITING_TARGET -> {
+                // 防守方有王：AI 自动选最强能赢的，真人弹窗
+                if (targetId in aiIds) {
+                    val pick = result.targetOptions.maxWithOrNull(Comparator { a, b -> ZjhEvaluator.compare(a, b) })
+                    if (pick != null && g.finalizeCompare(targetId, pick)) afterAction()
+                } else {
+                    state = state.copy(
+                        pendingCompare = PendingCompare(targetId, result.targetOptions, isTargetPick = true),
+                    )
+                }
+            }
+        }
+    }
+
+    /** 王选型对话框确认 */
+    fun onTransformPicked(hand: ZjhHand) {
+        val pc = state.pendingCompare ?: return
+        state = state.copy(pendingCompare = null)
+        if (pc.isTargetPick) {
+            if (state.game.finalizeCompare(pc.targetId, hand)) afterAction()
+        } else {
+            beginCompareFlow(pc.targetId, hand)
+        }
+    }
+
+    /** 取消发起者的选型（比牌未生效） */
+    fun cancelPendingCompare() {
+        state = state.copy(pendingCompare = null)
     }
 
     private fun afterAction() {
@@ -124,6 +182,7 @@ class ZjhGameViewModel(
                 val s = state.game.state
                 if (s.over) break
                 if (s.turn !in aiIds) break
+                if (state.pendingCompare != null) break
                 delay(1100)
                 val id = s.turn
                 val hand = state.game.handOf(id)
@@ -167,7 +226,11 @@ class ZjhGameViewModel(
             AiActionType.CALL -> g.call()
             AiActionType.RAISE -> d.level?.let { g.raise(it) } ?: false
             AiActionType.FOLD -> g.fold()
-            AiActionType.COMPARE -> d.targetId?.let { g.compare(it) } ?: false
+            AiActionType.COMPARE -> {
+                val t = d.targetId ?: return false
+                compare(t)
+                true
+            }
         }
     }
 

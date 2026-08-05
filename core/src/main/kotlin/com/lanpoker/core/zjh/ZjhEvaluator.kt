@@ -162,4 +162,20 @@ object ZjhEvaluator {
         val c = hand.cards.map { it.label }.joinToString("")
         return "${hand.type.label}$c"
     }
+
+    /** 点数 → 牌面 */
+    fun rankLabel(v: Int): String = when (v) {
+        14 -> "A"; 13 -> "K"; 12 -> "Q"; 11 -> "J"; else -> "$v"
+    }
+
+    /** 牌型选项的简短标签（王选型对话框用），如 "豹子A"、"顺子A高"、"对K带9" */
+    fun optionLabel(hand: ZjhHand): String = when (hand.type) {
+        ZjhHandType.TRIPLE -> "豹子${rankLabel(hand.tie[0])}"
+        ZjhHandType.STRAIGHT_FLUSH -> "顺金${rankLabel(hand.tie[0])}高"
+        ZjhHandType.FLUSH -> "金花${hand.tie.joinToString("") { rankLabel(it) }}"
+        ZjhHandType.STRAIGHT -> "顺子${rankLabel(hand.tie[0])}高"
+        ZjhHandType.PAIR -> "对${rankLabel(hand.tie[0])}带${rankLabel(hand.tie[1])}"
+        ZjhHandType.HIGH_CARD -> "单张${hand.tie.joinToString("") { rankLabel(it) }}"
+        ZjhHandType.SPECIAL_235 -> "235（吃豹子）"
+    }
 }

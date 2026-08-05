@@ -67,6 +67,7 @@ import com.lanpoker.core.deck.Card
 import com.lanpoker.core.deck.Suit
 import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.zjh.ZjhBettingGame
+import com.lanpoker.core.zjh.ZjhEvaluator
 import com.lanpoker.core.zjh.ZjhRules
 
 /**
@@ -127,7 +128,7 @@ fun ZjhGameScreen(
             onDismiss = { showRaise = false },
         )
     }
-    if (showCompare && state.phase == Phase.BETTING) {
+    if (showCompare && state.phase == Phase.BETTING && state.pendingCompare == null) {
         val active = viewModel.players.count { it.id !in game.state.folded }
         val eligible = if (active > 2) {
             // 三家以上只能与已看牌的玩家比牌
@@ -142,6 +143,15 @@ fun ZjhGameScreen(
             hint = if (active > 2) "三家以上只能和已看牌的玩家比牌" else "仅剩两家，可与任何对手开牌",
             onPick = { viewModel.compare(it); showCompare = false },
             onDismiss = { showCompare = false },
+        )
+    }
+    state.pendingCompare?.let { pc ->
+        TransformDialog(
+            title = if (pc.isTargetPick) "对方有王：选一个能赢过的牌型" else "你有王：先选你的牌型",
+            options = pc.options,
+            isTargetPick = pc.isTargetPick,
+            onPick = viewModel::onTransformPicked,
+            onCancel = viewModel::cancelPendingCompare,
         )
     }
 
@@ -597,6 +607,49 @@ private fun RaiseDialog(
             ) { Text("确定") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun TransformDialog(
+    title: String,
+    options: List<com.lanpoker.core.zjh.ZjhHand>,
+    isTargetPick: Boolean,
+    onPick: (com.lanpoker.core.zjh.ZjhHand) -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isTargetPick) onCancel() },
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(360.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "王可以临时变成其他牌，选一个定型",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                options.forEach { h ->
+                    Button(
+                        onClick = { onPick(h) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp),
+                    ) { Text(ZjhEvaluator.optionLabel(h)) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            if (!isTargetPick) {
+                TextButton(onClick = onCancel) { Text("取消") }
+            }
+        },
     )
 }
 

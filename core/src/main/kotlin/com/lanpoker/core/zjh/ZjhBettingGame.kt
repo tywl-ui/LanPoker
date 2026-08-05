@@ -1,6 +1,8 @@
 package com.lanpoker.core.zjh
 
 import com.lanpoker.core.deck.Card
+import com.lanpoker.core.deck.Rank
+import com.lanpoker.core.deck.Suit
 import com.lanpoker.core.ledger.Player
 
 /**
@@ -9,10 +11,11 @@ import com.lanpoker.core.ledger.Player
  * 规则：
  * - 底注 = base（底分单位）。闷牌跟注 = level×base；看牌跟注 = 2×level×base
  * - 加注：把 level 提到新值（闷牌按新 level 记，看牌按 2×新 level 记）
- * - 比牌：发起者先付比牌费（闷 1×/看 2× 当前 level），双方按牌型比大小，输者弃牌；
- *   牌型平局时发起者输（约定俗成）
+ * - 比牌：双方各付比牌费（闷 1×/看 2× 当前 level）；输者弃牌；平局发起者输
+ * - 三家以上只能和【已看牌】的玩家比牌；仅剩两家时可与闷牌者开牌
+ * - 王（百搭）在比牌时定型：发起者先自选一个能组成的牌型；对方若有王，
+ *   可在「能赢过所选牌型」的范围内再选；选不出则输
  * - 只剩一人时本局结束，赢家收走全部底池
- * - 每人每轮必须动作：跟注（已跟够时等同"过"）/ 加注 / 比牌 / 弃牌
  */
 class ZjhBettingGame(
     val players: List<Player>,
@@ -31,10 +34,50 @@ class ZjhBettingGame(
         val winnerId: Int?,
         val winnerLabel: String?,
         val lastAction: String?,
+        val jokerLock: Map<Int, ZjhHand> = emptyMap(),
     )
 
-    private val evaluated: Map<Int, ZjhHand> = players.associate { p ->
-        p.id to ZjhEvaluator.evaluate(hands[players.indexOf(p)], rules)
+    /** 每位玩家能组成的全部牌型（去重），王玩家为可选项，非王玩家只有最优一项 */
+    private val transforms: Map<Int, List<ZjhHand>>
+    private val bestEval: Map<Int, ZjhHand>
+    private val jokerPlayers: Set<Int>
+
+    init {
+        bestEval = players.associate { p ->
+            p.id to ZjhEvaluator.evaluate(hands[players.indexOf(p)], rules)
+        }
+        transforms = players.associate { p ->
+            val hand = hands[players.indexOf(p)]
+            val all = if (hand.any { it is Card.Joker }) enumerateTransforms(hand)
+            else listOf(bestEval.getValue(p.id))
+            p.id to dedup(all)
+        }
+        jokerPlayers = players.filter { p -> hands[players.indexOf(p)].any { it is Card.Joker } }
+            .map { it.id }.toSet()
+    }
+
+    /** 王的所有可能替代，逐一求值（52^王数 次，开局一次） */
+    private fun enumerateTransforms(hand: List<Card>): List<ZjhHand> {
+        val jokers = hand.filterIsInstance<Card.Joker>()
+        val normals = hand.filterIsInstance<Card.Poker>()
+        val variants = Rank.entries.flatMap { r -> Suit.entries.map { s -> Card.Poker(r, s) } }
+        val results = mutableListOf<ZjhHand>()
+        fun rec(idx: Int, fixed: List<Card>) {
+            if (idx == jokers.size) {
+                results += ZjhEvaluator.evaluate(fixed, rules)
+                return
+            }
+            for (v in variants) rec(idx + 1, fixed + v)
+        }
+        rec(0, normals)
+        return results
+    }
+
+    /** 按（牌型,点数）去重 */
+    private fun dedup(all: List<ZjhHand>): List<ZjhHand> {
+        val seen = LinkedHashMap<Pair<ZjhHandType, List<Int>>, ZjhHand>()
+        all.forEach { h -> seen.putIfAbsent(h.type to h.tie, h) }
+        return seen.values.toList()
     }
 
     private var _state = State(
@@ -51,9 +94,15 @@ class ZjhBettingGame(
 
     val state: State get() = _state
 
-    fun handLabel(id: Int): String = ZjhEvaluator.describe(evaluated.getValue(id))
+    fun handLabel(id: Int): String = labelFor(id, null)
 
-    fun handOf(id: Int): ZjhHand = evaluated.getValue(id)
+    fun handOf(id: Int): ZjhHand = bestEval.getValue(id)
+
+    /** 该玩家全部可选的牌型（王玩家），非王玩家返回最优一项 */
+    fun transformsOf(id: Int): List<ZjhHand> = transforms.getValue(id)
+
+    /** 该玩家是否持有王 */
+    fun hasJoker(id: Int): Boolean = id in jokerPlayers
 
     private fun name(id: Int) = players.first { it.id == id }.name
     private fun stakeOf(id: Int) = _state.stakes[id] ?: 0
@@ -117,31 +166,80 @@ class ZjhBettingGame(
         return true
     }
 
+    /** 比牌结果：RESOLVED 已定胜负；AWAITING_TARGET 需对方再选牌型 */
+    enum class CompareStep { RESOLVED, AWAITING_TARGET }
+
+    data class CompareResult(
+        val step: CompareStep,
+        val loserId: Int? = null,
+        val targetOptions: List<ZjhHand> = emptyList(),
+    )
+
     /**
-     * 比牌：与 target 比大小，输者弃牌；平局发起者输。
-     * 规则：双方各付比牌费（闷牌付 1×level，看牌付 2×level）；
-     * 三家以上时只能和【已看牌】的玩家比牌，不能和闷牌的比；
-     * 仅剩两家时，看牌/闷牌双方可以互相开牌。
+     * 发起比牌（兼容无王发起者，challengerHand 为 null 用最优牌型）。
+     * 有王发起者先锁定所选牌型；对方无王立即定胜负，对方有王且能赢则等待其选型。
      */
-    fun compare(targetId: Int): Boolean {
+    fun beginCompare(targetId: Int, challengerHand: ZjhHand? = null): CompareResult? {
         val id = _state.turn
-        if (_state.over || id in _state.folded || targetId == id || targetId in _state.folded) return false
-        if (activeCount() > 2 && targetId !in _state.looked) return false
-        // 比牌费：双方各自按自己的闷/看档位支付
+        if (_state.over || id in _state.folded || targetId == id || targetId in _state.folded) return null
+        if (activeCount() > 2 && targetId !in _state.looked) return null
+        if (challengerHand != null && challengerHand !in transforms.getValue(id)) return null
+
+        val cHand = challengerHand ?: bestEval.getValue(id)
+        if (challengerHand != null) {
+            _state = _state.copy(jokerLock = _state.jokerLock + (id to cHand))
+        }
+
+        // 对方无王：固定牌直接定胜负（平局发起者输）
+        if (targetId !in jokerPlayers) {
+            val tHand = bestEval.getValue(targetId)
+            val loser = if (ZjhEvaluator.compare(cHand, tHand) <= 0) id else targetId
+            applyCompareOutcome(id, targetId, cHand, tHand, loser)
+            return CompareResult(CompareStep.RESOLVED, loserId = loser)
+        }
+        // 对方有王：在「能赢过所选牌型」的范围内选
+        val wins = transforms.getValue(targetId).filter { ZjhEvaluator.compare(it, cHand) > 0 }
+        if (wins.isEmpty()) {
+            applyCompareOutcome(id, targetId, cHand, null, loser = targetId)
+            return CompareResult(CompareStep.RESOLVED, loserId = targetId)
+        }
+        return CompareResult(CompareStep.AWAITING_TARGET, targetOptions = wins)
+    }
+
+    /** 对方（有王）选定能赢的牌型，完成比牌 */
+    fun finalizeCompare(targetId: Int, targetHand: ZjhHand): Boolean {
+        val id = _state.turn
+        if (_state.over || id in _state.folded || targetId in _state.folded) return false
+        if (targetId !in jokerPlayers || targetHand !in transforms.getValue(targetId)) return false
+        val cHand = _state.jokerLock[id] ?: bestEval.getValue(id)
+        if (ZjhEvaluator.compare(targetHand, cHand) <= 0) return false
+        applyCompareOutcome(id, targetId, cHand, targetHand, loser = id)
+        return true
+    }
+
+    /** 老接口：无王发起者的立即比牌 */
+    fun compare(targetId: Int): Boolean {
+        val r = beginCompare(targetId, null) ?: return false
+        return r.step == CompareStep.RESOLVED
+    }
+
+    /** 比牌双方各付比牌费并淘汰输家 */
+    private fun applyCompareOutcome(id: Int, targetId: Int, cHand: ZjhHand, tHand: ZjhHand?, loser: Int) {
         val fee = requiredBase(id) * base
         val feeTarget = requiredBase(targetId) * base
-        val challengerLoses = ZjhEvaluator.compare(evaluated.getValue(id), evaluated.getValue(targetId)) <= 0
-        val loser = if (challengerLoses) id else targetId
-        val newStakes = _state.stakes
-            .plus(id to stakeOf(id) + fee)
-            .plus(targetId to stakeOf(targetId) + feeTarget)
+        val lock = if (tHand != null) _state.jokerLock + (targetId to tHand) else _state.jokerLock
         _state = _state.copy(
-            stakes = newStakes,
+            stakes = _state.stakes
+                .plus(id to stakeOf(id) + fee)
+                .plus(targetId to stakeOf(targetId) + feeTarget),
             folded = _state.folded + loser,
-            lastAction = "${name(id)} 与 ${name(targetId)} 比牌，${name(loser)} 输（${handLabel(loser)}）",
+            jokerLock = lock,
+            lastAction = when (loser) {
+                id -> "${name(id)} 与 ${name(targetId)} 比牌，${name(id)} 输（${labelFor(targetId, tHand)}）"
+                else -> "${name(id)} 与 ${name(targetId)} 比牌，${name(targetId)} 输（${labelFor(id, cHand)}）"
+            },
         )
         if (activeCount() == 1) finish() else advance()
-        return true
     }
 
     fun pot(): Int = _state.stakes.values.sum()
@@ -153,6 +251,13 @@ class ZjhBettingGame(
         return players.associate { pl ->
             if (pl.id == w) pl.id to (p - stakeOf(pl.id)) else pl.id to -stakeOf(pl.id)
         }
+    }
+
+    /** 牌型描述：真实手牌 + 选定的牌型（王玩家用已定型/最优） */
+    private fun labelFor(id: Int, hand: ZjhHand?): String {
+        val h = hand ?: _state.jokerLock[id] ?: bestEval.getValue(id)
+        val realCards = hands[players.indexOfFirst { it.id == id }].joinToString("") { it.label }
+        return "${h.type.label}$realCards"
     }
 
     private fun advance() {
@@ -169,7 +274,7 @@ class ZjhBettingGame(
         _state = _state.copy(
             over = true,
             winnerId = winner.id,
-            winnerLabel = ZjhEvaluator.describe(evaluated.getValue(winner.id)),
+            winnerLabel = labelFor(winner.id, _state.jokerLock[winner.id]),
             lastAction = "${winner.name} 赢下全部底池",
         )
     }

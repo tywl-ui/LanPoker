@@ -21,7 +21,8 @@ class ZjhBettingGameTest {
             listOf(p(Rank.THREE, Suit.SPADE), p(Rank.FOUR, Suit.HEART), p(Rank.FIVE, Suit.CLUB)),
         ),
         base: Int = 1,
-    ) = ZjhBettingGame(players, hands, base)
+        rules: ZjhRules = ZjhRules(),
+    ) = ZjhBettingGame(players, hands, base, rules)
 
     @Test
     fun 开局每人自动下底注() {
@@ -222,6 +223,143 @@ class ZjhBettingGameTest {
         assertTrue(2 in g.state.folded) // 乙对K 输给 丙顺子
         assertTrue(g.state.over)
         assertEquals(3, g.state.winnerId)
+    }
+
+    @Test
+    fun 有王发起者选型定型后赢固定牌() {
+        val g = game(
+            hands = listOf(
+                listOf(Card.Joker(false), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART)), // 甲 王+对A
+                listOf(p(Rank.KING, Suit.SPADE), p(Rank.KING, Suit.HEART), p(Rank.NINE, Suit.CLUB)), // 乙 对K
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)), // 丙 单张
+            ),
+        )
+        g.call() // 甲过
+        g.look() // 乙看牌
+        g.call() // 乙看跟
+        g.call() // 丙过
+        // 甲（有王）锁定豹子A
+        val options = g.transformsOf(1)
+        val baoZiA = options.first { it.type == ZjhHandType.TRIPLE && it.tie[0] == 14 }
+        val r = g.beginCompare(2, baoZiA)
+        assertEquals(ZjhBettingGame.CompareStep.RESOLVED, r?.step)
+        assertEquals(2, r?.loserId) // 乙对K 输给 豹子A
+        assertTrue(2 in g.state.folded)
+    }
+
+    @Test
+    fun 王防守方选型后发起者输() {
+        val g = game(
+            hands = listOf(
+                listOf(p(Rank.KING, Suit.SPADE), p(Rank.KING, Suit.HEART), p(Rank.NINE, Suit.CLUB)), // 甲 对K
+                listOf(Card.Joker(false), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART)), // 乙 王+对A
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
+            ),
+        )
+        g.call() // 甲过
+        g.look() // 乙看牌
+        g.call() // 乙看跟
+        g.call() // 丙过
+        // 甲（无王）发起 vs 乙（有王）
+        val r = g.beginCompare(2, null)
+        assertEquals(ZjhBettingGame.CompareStep.AWAITING_TARGET, r?.step)
+        val wins = r!!.targetOptions
+        assertTrue(wins.isNotEmpty())
+        assertTrue(wins.all { ZjhEvaluator.compare(it, g.handOf(1)) > 0 }) // 都能赢过甲的对K
+        val pick = wins.maxWithOrNull(Comparator { a, b -> ZjhEvaluator.compare(a, b) })!!
+        assertTrue(g.finalizeCompare(2, pick))
+        assertTrue(1 in g.state.folded) // 甲输
+    }
+
+    @Test
+    fun 王防守方选不出能赢的牌型则直接输() {
+        // 关闭 235 吃豹子：王+23 最多顺子，赢不了豹子A
+        val g = game(
+            hands = listOf(
+                listOf(p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART), p(Rank.ACE, Suit.CLUB)), // 甲 豹子A
+                listOf(Card.Joker(false), p(Rank.TWO, Suit.SPADE), p(Rank.THREE, Suit.HEART)), // 乙 王+23
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
+            ),
+            rules = ZjhRules(rule235EatsTriple = false),
+        )
+        g.call() // 甲过
+        g.look() // 乙看牌
+        g.call() // 乙看跟
+        g.call() // 丙过
+        val r = g.beginCompare(2, null) // 甲豹子A vs 乙
+        assertEquals(ZjhBettingGame.CompareStep.RESOLVED, r?.step)
+        assertEquals(2, r?.loserId) // 乙最多顺子，赢不了豹子A
+        assertTrue(2 in g.state.folded)
+    }
+
+    @Test
+    fun 王防守方可变235吃豹子() {
+        // 235 吃豹子开启时：王+23 能变 235 吃掉豹子A
+        val g = game(
+            hands = listOf(
+                listOf(p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART), p(Rank.ACE, Suit.CLUB)), // 甲 豹子A
+                listOf(Card.Joker(false), p(Rank.TWO, Suit.SPADE), p(Rank.THREE, Suit.HEART)), // 乙 王+23
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
+            ),
+        )
+        g.call() // 甲过
+        g.look() // 乙看牌
+        g.call() // 乙看跟
+        g.call() // 丙过
+        val r = g.beginCompare(2, null)
+        assertEquals(ZjhBettingGame.CompareStep.AWAITING_TARGET, r?.step)
+        assertTrue(r!!.targetOptions.any { it.type == ZjhHandType.SPECIAL_235 })
+        val pick235 = r.targetOptions.first { it.type == ZjhHandType.SPECIAL_235 }
+        assertTrue(g.finalizeCompare(2, pick235))
+        assertTrue(1 in g.state.folded) // 甲豹子A 被 235 吃掉
+    }
+
+    @Test
+    fun 双方有王发起者定型后防守方无解则输() {
+        val g = game(
+            hands = listOf(
+                listOf(Card.Joker(false), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART)), // 甲 王+对A
+                listOf(Card.Joker(false), p(Rank.KING, Suit.SPADE), p(Rank.KING, Suit.HEART)), // 乙 王+对K
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
+            ),
+        )
+        g.call() // 甲过
+        g.look() // 乙看牌
+        g.call() // 乙看跟
+        g.call() // 丙过
+        val baoZiA = g.transformsOf(1).first { it.type == ZjhHandType.TRIPLE && it.tie[0] == 14 }
+        val r = g.beginCompare(2, baoZiA)
+        assertEquals(ZjhBettingGame.CompareStep.RESOLVED, r?.step)
+        assertEquals(2, r?.loserId) // 乙最大豹子K < 豹子A，无解
+        assertTrue(2 in g.state.folded)
+    }
+
+    @Test
+    fun 非法选型被拒绝() {
+        val g = game(
+            hands = listOf(
+                listOf(Card.Joker(false), p(Rank.TWO, Suit.SPADE), p(Rank.THREE, Suit.HEART)), // 甲 王+23
+                listOf(p(Rank.KING, Suit.SPADE), p(Rank.KING, Suit.HEART), p(Rank.NINE, Suit.CLUB)),
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
+            ),
+        )
+        g.call()
+        g.look() // 乙看牌
+        g.call()
+        g.call()
+        // 甲手里王+23 不可能变出豹子A → 拒绝
+        val fake = ZjhEvaluator.evaluate(
+            listOf(p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART), p(Rank.ACE, Suit.CLUB)),
+        )
+        assertEquals(null, g.beginCompare(2, fake))
+        assertEquals(0, g.state.folded.size)
+    }
+
+    @Test
+    fun 非王玩家变换列表只有最优一项() {
+        val g = game()
+        assertEquals(1, g.transformsOf(1).size)
+        assertFalse(g.hasJoker(1))
     }
 
     @Test
