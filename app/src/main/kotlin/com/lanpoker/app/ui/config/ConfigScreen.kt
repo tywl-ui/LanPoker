@@ -217,7 +217,8 @@ fun ConfigScreen(
                 RuleLine("底注", "开局每人自动下 1 底；闷牌跟注 = level 底，看牌 = 2×level 底")
                 RuleLine("加注", "倍数必须高于当前，可自填；看牌加注按 2 倍计")
                 RuleLine("比牌", "双方各付比牌费（闷1×/看2×）；三家以上只能与已看牌者比；剩两家可与闷牌者开牌；平局发起者输")
-                RuleLine("牌型", "豹子 > 顺金 > 金花 > 顺子 > 对子 > 单张${if (rule235) "；杂色 235 吃豹子" else ""}")
+                RuleLine("牌型", "豹子 > 顺金 > 金花 > 顺子 > 对子 > 单张；杂色 235 吃豹子、金花 235 吃同花豹")
+                RuleLine("王", "比牌时定型；1-2 副牌王不能变同花豹，3 副牌可")
             }
         }
 
@@ -233,7 +234,10 @@ fun ConfigScreen(
                     mode,
                     aiCount.coerceAtMost(maxAi),
                     names.map { it.trim() },
-                    ZjhRules(rule235EatsTriple = rule235),
+                    ZjhRules(
+                        rule235EatsTriple = rule235,
+                        allowSameSuitTriple = config.deckCount >= 3,
+                    ),
                     tieRule,
                 )
             },

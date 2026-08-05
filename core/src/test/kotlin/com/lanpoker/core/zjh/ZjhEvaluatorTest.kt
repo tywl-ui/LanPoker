@@ -3,8 +3,10 @@ package com.lanpoker.core.zjh
 import com.lanpoker.core.deck.Card
 import com.lanpoker.core.deck.Rank
 import com.lanpoker.core.deck.Suit
+import com.lanpoker.core.ledger.Player
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -209,6 +211,60 @@ class ZjhEvaluatorTest {
             ZjhEvaluator.evaluate(listOf(p(Rank.ACE, Suit.SPADE), p(Rank.QUEEN, Suit.HEART), p(Rank.TEN, Suit.CLUB))),
         )
         assertEquals(null, ZjhEvaluator.strongestIndex(hands, TieRule.REDEAL))
+    }
+
+    @Test
+    fun 金花235吃同花豹() {
+        val flush235 = ZjhEvaluator.evaluate(listOf(p(Rank.TWO, Suit.HEART), p(Rank.THREE, Suit.HEART), p(Rank.FIVE, Suit.HEART)))
+        val sameSuitTriple = ZjhEvaluator.evaluate(listOf(p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.SPADE)))
+        assertEquals(ZjhHandType.FLUSH, flush235.type)
+        assertTrue(ZjhEvaluator.isSameSuitTriple(sameSuitTriple))
+        assertTrue(ZjhEvaluator.compare(flush235, sameSuitTriple) > 0)  // 金花235 吃 同花豹
+    }
+
+    @Test
+    fun 金花235输给杂花豹() {
+        val flush235 = ZjhEvaluator.evaluate(listOf(p(Rank.TWO, Suit.HEART), p(Rank.THREE, Suit.HEART), p(Rank.FIVE, Suit.HEART)))
+        val mixedTriple = ZjhEvaluator.evaluate(listOf(p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART), p(Rank.ACE, Suit.CLUB)))
+        assertFalse(ZjhEvaluator.isSameSuitTriple(mixedTriple))
+        assertTrue(ZjhEvaluator.compare(flush235, mixedTriple) < 0)  // 杂花豹 赢 金花235
+    }
+
+    @Test
+    fun 同花豹大于杂花豹() {
+        val same = ZjhEvaluator.evaluate(listOf(p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.SPADE)))
+        val mixed = ZjhEvaluator.evaluate(listOf(p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.HEART), p(Rank.ACE, Suit.CLUB)))
+        assertTrue(ZjhEvaluator.compare(same, mixed) > 0)
+        assertEquals(0, ZjhEvaluator.compare(same, same)) // 两张相同的同花豹平局
+    }
+
+    @Test
+    fun 一副牌时王不能变同花豹() {
+        val g = ZjhBettingGame(
+            players = listOf(Player(1, "甲"), Player(2, "乙")),
+            hands = listOf(
+                listOf(Card.Joker(false), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.SPADE)),
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
+            ),
+            base = 1,
+        )
+        val triples = g.transformsOf(1).filter { it.type == ZjhHandType.TRIPLE }
+        assertTrue(triples.isNotEmpty())
+        assertTrue(triples.all { !ZjhEvaluator.isSameSuitTriple(it) })
+    }
+
+    @Test
+    fun 三副牌时王可以变同花豹() {
+        val g = ZjhBettingGame(
+            players = listOf(Player(1, "甲"), Player(2, "乙")),
+            hands = listOf(
+                listOf(Card.Joker(false), p(Rank.ACE, Suit.SPADE), p(Rank.ACE, Suit.SPADE)),
+                listOf(p(Rank.TEN, Suit.SPADE), p(Rank.EIGHT, Suit.HEART), p(Rank.SIX, Suit.CLUB)),
+            ),
+            base = 1,
+            rules = ZjhRules(allowSameSuitTriple = true),
+        )
+        assertTrue(g.transformsOf(1).any { ZjhEvaluator.isSameSuitTriple(it) })
     }
 
     @Test

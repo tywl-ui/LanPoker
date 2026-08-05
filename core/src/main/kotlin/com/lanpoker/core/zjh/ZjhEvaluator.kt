@@ -17,8 +17,10 @@ enum class ZjhHandType(val order: Int, val label: String) {
 
 /** 规则开关 */
 data class ZjhRules(
-    /** 杂色 235 吃豹子 */
+    /** 杂色 235 吃豹子（同花 235 算金花，不触发） */
     val rule235EatsTriple: Boolean = true,
+    /** 允许同花豹（三张同花色同点数）：仅 3 副牌时可能真实存在；1-2 副牌时王不能变成同花豹 */
+    val allowSameSuitTriple: Boolean = false,
 )
 
 /** 一副已判定的手牌：tie 为按序比较的大小键（从大到小） */
@@ -54,6 +56,8 @@ object ZjhEvaluator {
         fun rec(idx: Int, cur: List<Card>) {
             if (idx == jokers.size) {
                 val h = evaluateNormal(cur.filterIsInstance<Card.Poker>(), rules)
+                // 1-2 副牌不允许同花豹：王不能变成三张同花色同点数
+                if (!rules.allowSameSuitTriple && isSameSuitTriple(h)) return
                 if (best == null || compare(h, best!!) > 0) best = h
                 return
             }
@@ -63,6 +67,11 @@ object ZjhEvaluator {
         // 用真实手牌替换枚举出的虚拟牌（type/tie 保留最优结果）
         return best!!.copy(cards = hand)
     }
+
+    /** 是否同花豹（三张同花色同点数） */
+    internal fun isSameSuitTriple(h: ZjhHand): Boolean =
+        h.type == ZjhHandType.TRIPLE && h.cards.size == 3 &&
+            h.cards.all { it is Card.Poker && it.suit == (h.cards[0] as Card.Poker).suit }
 
     /** 无王的判定 */
     internal fun evaluateNormal(cards: List<Card.Poker>, rules: ZjhRules): ZjhHand {
@@ -97,7 +106,8 @@ object ZjhEvaluator {
 
     /**
      * 比较两手牌。>0 表示 a 赢，<0 表示 b 赢，0 表示牌型点数平局。
-     * 235 规则：SPECIAL_235 只压 TRIPLE，其余情况视为单张。
+     * 235 规则：SPECIAL_235（杂色）只压 TRIPLE，其余情况视为单张；
+     * 金花 235 吃同花豹；同点数时同花豹 > 杂花豹（3 副牌玩法）。
      */
     fun compare(a: ZjhHand, b: ZjhHand): Int {
         val a235 = a.type == ZjhHandType.SPECIAL_235
@@ -105,7 +115,21 @@ object ZjhEvaluator {
         if (a235 && b235) return compareTie(a, b)
         if (a235) return if (b.type == ZjhHandType.TRIPLE) 1 else -1
         if (b235) return if (a.type == ZjhHandType.TRIPLE) -1 else 1
+        val aFlush235 = a.type == ZjhHandType.FLUSH && a.tie == listOf(5, 3, 2)
+        val bFlush235 = b.type == ZjhHandType.FLUSH && b.tie == listOf(5, 3, 2)
+        val aSuitTriple = isSameSuitTriple(a)
+        val bSuitTriple = isSameSuitTriple(b)
+        // 金花 235 吃同花豹（对杂花豹无效，按正常顺序）
+        if (aFlush235 && bSuitTriple) return 1
+        if (bFlush235 && aSuitTriple) return -1
         if (a.type != b.type) return a.type.order - b.type.order
+        if (a.type == ZjhHandType.TRIPLE) {
+            val cmp = compareTie(a, b)
+            if (cmp != 0) return cmp
+            // 点数相同：同花豹 > 杂花豹
+            if (aSuitTriple != bSuitTriple) return if (aSuitTriple) 1 else -1
+            return 0
+        }
         return compareTie(a, b)
     }
 

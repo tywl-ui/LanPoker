@@ -64,7 +64,11 @@ class ZjhBettingGame(
         val results = mutableListOf<ZjhHand>()
         fun rec(idx: Int, fixed: List<Card>) {
             if (idx == jokers.size) {
-                results += ZjhEvaluator.evaluate(fixed, rules)
+                val h = ZjhEvaluator.evaluate(fixed, rules)
+                // 1-2 副牌不允许同花豹：王不能变成三张同花色同点数
+                if (rules.allowSameSuitTriple || !ZjhEvaluator.isSameSuitTriple(h)) {
+                    results += h
+                }
                 return
             }
             for (v in variants) rec(idx + 1, fixed + v)
