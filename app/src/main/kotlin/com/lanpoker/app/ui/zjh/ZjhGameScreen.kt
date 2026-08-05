@@ -1,10 +1,17 @@
 package com.lanpoker.app.ui.zjh
 
 import android.widget.Toast
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -44,8 +52,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -71,6 +82,7 @@ import com.lanpoker.core.ledger.Player
 import com.lanpoker.core.zjh.ZjhBettingGame
 import com.lanpoker.core.zjh.ZjhEvaluator
 import com.lanpoker.core.zjh.ZjhRules
+import kotlinx.coroutines.delay
 
 /**
  * 座位布局：0 号为当前行动者（屏幕下方正中），其余按人数分布在牌桌周围。
@@ -167,6 +179,30 @@ fun ZjhGameScreen(
             onPick = viewModel::onTransformPicked,
             onCancel = viewModel::cancelPendingCompare,
         )
+    }
+
+    // 比牌对决特效
+    val compareEvent = state.game.state.lastCompare
+    LaunchedEffect(compareEvent) {
+        if (compareEvent != null) {
+            delay(3200)
+            viewModel.dismissCompareShowdown()
+        }
+    }
+    if (compareEvent != null && state.phase == Phase.BETTING) {
+        val challenger = viewModel.players.firstOrNull { it.id == compareEvent.challengerId }
+        val target = viewModel.players.firstOrNull { it.id == compareEvent.targetId }
+        val cIdx = game.players.indexOfFirst { it.id == compareEvent.challengerId }
+        val tIdx = game.players.indexOfFirst { it.id == compareEvent.targetId }
+        if (challenger != null && target != null && cIdx >= 0 && tIdx >= 0) {
+            ShowdownOverlay(
+                event = compareEvent,
+                challenger = challenger,
+                target = target,
+                challengerCards = game.hands[cIdx],
+                targetCards = game.hands[tIdx],
+            )
+        }
     }
 
     Box(
@@ -266,8 +302,11 @@ private fun TableArea(
         players.forEach { p ->
             val slotIndex = if (p.id == actor) 0 else others.indexOf(p) + 1
             val slot = slots.getOrElse(slotIndex) { slots.first() }
-            val x = (w * slot.x - seatW / 2).coerceAtLeast(0.dp)
-            val y = (h * slot.y - seatH / 2).coerceAtLeast(0.dp)
+            val targetX = (w * slot.x - seatW / 2).coerceAtLeast(0.dp)
+            val targetY = (h * slot.y - seatH / 2).coerceAtLeast(0.dp)
+            // 换位平滑滑动
+            val animX by animateDpAsState(targetValue = targetX, animationSpec = tween(450), label = "seatX")
+            val animY by animateDpAsState(targetValue = targetY, animationSpec = tween(450), label = "seatY")
             val isActorRevealed = p.id == actor && showMyCards
             key(round) {
                 Seat(
@@ -278,7 +317,7 @@ private fun TableArea(
                     cardW = if (isActorRevealed) cardW + 10.dp else cardW,
                     cardH = if (isActorRevealed) cardH + 14.dp else cardH,
                     overlap = overlap,
-                    modifier = Modifier.offset(x = x, y = y),
+                    modifier = Modifier.offset(x = animX, y = animY),
                 )
             }
         }
@@ -348,10 +387,16 @@ private fun Seat(
                 hand.forEachIndexed { i, card ->
                     val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
                     val showFace = showCards && !folded
-                    if (showFace) {
-                        CardFront(card = card, width = cardW, height = cardH, modifier = m)
-                    } else {
-                        CardBack(width = cardW, height = cardH, dimmed = folded, modifier = m)
+                    Crossfade(
+                        targetState = showFace,
+                        animationSpec = tween(260),
+                        label = "flip",
+                    ) { face ->
+                        if (face) {
+                            CardFront(card = card, width = cardW, height = cardH, modifier = m)
+                        } else {
+                            CardBack(width = cardW, height = cardH, dimmed = folded, modifier = m)
+                        }
                     }
                 }
             }
@@ -560,6 +605,160 @@ private fun SettledPanel(
             Button(onClick = onNext) { Text("下一局") }
             OutlinedButton(onClick = onBill, border = BorderStroke(1.dp, Color.White)) { Text("账单", color = Color.White) }
         }
+    }
+}
+
+// ---------- 比牌对决特效 ----------
+
+@Composable
+private fun ShowdownOverlay(
+    event: ZjhBettingGame.CompareEvent,
+    challenger: Player,
+    target: Player,
+    challengerCards: List<Card>,
+    targetCards: List<Card>,
+) {
+    var showResult by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(1200); showResult = true }
+
+    val winnerId = if (event.loserId == event.challengerId) event.targetId else event.challengerId
+    val challengerWon = winnerId == event.challengerId
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xE60A2415)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(40.dp))
+            // 对方（上方）
+            ShowdownSide(
+                name = "${target.name}（${event.targetLabel}）",
+                cards = targetCards,
+                isWinner = !challengerWon,
+                showResult = showResult,
+            )
+            Spacer(Modifier.weight(1f))
+            // VS 冲击特效
+            VsEmblem(showResult = showResult)
+            Spacer(Modifier.weight(1f))
+            // 自己（下方桌面）
+            ShowdownSide(
+                name = "${challenger.name}（${event.challengerLabel}）",
+                cards = challengerCards,
+                isWinner = challengerWon,
+                showResult = showResult,
+            )
+            Spacer(Modifier.height(48.dp))
+        }
+        // 胜负横幅
+        if (showResult) {
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically(animationSpec = tween(400)) { it } + fadeIn(tween(400)),
+                modifier = Modifier.align(Alignment.Center),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (challengerWon) Color(0xFF2E7D32) else Color(0xFFC62828),
+                    border = BorderStroke(2.dp, Gold),
+                    shadowElevation = 10.dp,
+                ) {
+                    Text(
+                        if (challengerWon) "${challenger.name} 赢！" else "${target.name} 赢！",
+                        color = Color.White,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShowdownSide(
+    name: String,
+    cards: List<Card>,
+    isWinner: Boolean,
+    showResult: Boolean,
+) {
+    var revealed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { revealed = true }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = if (isWinner && showResult) Color(0x662E7D32) else Color(0x22000000),
+            border = if (isWinner && showResult) BorderStroke(2.dp, Gold) else null,
+        ) {
+            Text(
+                name,
+                color = Color.White,
+                fontWeight = if (showResult) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            cards.forEachIndexed { i, card ->
+                AnimatedVisibility(
+                    visible = revealed,
+                    enter = fadeIn(tween(300)) +
+                        scaleIn(initialScale = 0.3f, animationSpec = tween(350, delayMillis = i * 130)),
+                ) {
+                    Box(
+                        modifier = Modifier.alpha(if (showResult && !isWinner) 0.35f else 1f),
+                    ) {
+                        CardFront(card = card, width = 58.dp, height = 82.dp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VsEmblem(showResult: Boolean) {
+    val pulse = rememberInfiniteTransition(label = "vs")
+    val scale by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = if (showResult) 0.9f else 1.18f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "vsScale",
+    )
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(92.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+    ) {
+        // 光晕
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .background(
+                    Brush.radialGradient(
+                        listOf(Gold.copy(alpha = 0.5f), Color.Transparent),
+                    ),
+                    CircleShape,
+                ),
+        )
+        Text(
+            "VS",
+            fontSize = 40.sp,
+            fontWeight = FontWeight.Black,
+            color = Gold,
+            style = MaterialTheme.typography.headlineLarge,
+        )
     }
 }
 

@@ -35,6 +35,17 @@ class ZjhBettingGame(
         val winnerLabel: String?,
         val lastAction: String?,
         val jokerLock: Map<Int, ZjhHand> = emptyMap(),
+        /** 最近一次比牌的双方与胜负（供对决特效展示） */
+        val lastCompare: CompareEvent? = null,
+    )
+
+    /** 比牌事件：谁和谁比、各自牌型、谁输 */
+    data class CompareEvent(
+        val challengerId: Int,
+        val targetId: Int,
+        val challengerLabel: String,
+        val targetLabel: String,
+        val loserId: Int,
     )
 
     /** 每位玩家能组成的全部牌型（去重），王玩家为可选项，非王玩家只有最优一项 */
@@ -198,13 +209,22 @@ class ZjhBettingGame(
         if (targetId !in jokerPlayers) {
             val tHand = bestEval.getValue(targetId)
             val loser = if (ZjhEvaluator.compare(cHand, tHand) <= 0) id else targetId
-            applyCompareOutcome(id, targetId, tHand, loser)
+            applyCompareOutcome(
+                id, targetId, tHand, loser,
+                challengerLabel = ZjhEvaluator.optionLabel(cHand),
+                targetLabel = ZjhEvaluator.optionLabel(tHand),
+            )
             return CompareResult(CompareStep.RESOLVED, loserId = loser)
         }
         // 对方有王：在「能赢过所选牌型」的范围内选
         val wins = transforms.getValue(targetId).filter { ZjhEvaluator.compare(it, cHand) > 0 }
         if (wins.isEmpty()) {
-            applyCompareOutcome(id, targetId, null, loser = targetId)
+            val tBest = bestEval.getValue(targetId)
+            applyCompareOutcome(
+                id, targetId, null, loser = targetId,
+                challengerLabel = ZjhEvaluator.optionLabel(cHand),
+                targetLabel = ZjhEvaluator.optionLabel(tBest),
+            )
             return CompareResult(CompareStep.RESOLVED, loserId = targetId)
         }
         return CompareResult(CompareStep.AWAITING_TARGET, targetOptions = wins)
@@ -217,7 +237,11 @@ class ZjhBettingGame(
         if (targetId !in jokerPlayers || targetHand !in transforms.getValue(targetId)) return false
         val cHand = _state.jokerLock[id] ?: bestEval.getValue(id)
         if (ZjhEvaluator.compare(targetHand, cHand) <= 0) return false
-        applyCompareOutcome(id, targetId, targetHand, loser = id)
+        applyCompareOutcome(
+            id, targetId, targetHand, loser = id,
+            challengerLabel = ZjhEvaluator.optionLabel(cHand),
+            targetLabel = ZjhEvaluator.optionLabel(targetHand),
+        )
         return true
     }
 
@@ -228,7 +252,14 @@ class ZjhBettingGame(
     }
 
     /** 比牌双方各付比牌费并淘汰输家 */
-    private fun applyCompareOutcome(id: Int, targetId: Int, tHand: ZjhHand?, loser: Int) {
+    private fun applyCompareOutcome(
+        id: Int,
+        targetId: Int,
+        tHand: ZjhHand?,
+        loser: Int,
+        challengerLabel: String,
+        targetLabel: String,
+    ) {
         val fee = requiredBase(id) * base
         val feeTarget = requiredBase(targetId) * base
         // 只有王玩家才锁定选定的牌型
@@ -243,10 +274,16 @@ class ZjhBettingGame(
                 .plus(targetId to stakeOf(targetId) + feeTarget),
             folded = _state.folded + loser,
             jokerLock = lock,
+            lastCompare = CompareEvent(id, targetId, challengerLabel, targetLabel, loser),
             // 日志只报谁输，不亮出双方牌面（牌面由结算页展示赢家）
             lastAction = "${name(id)} 与 ${name(targetId)} 比牌，${name(loser)} 输",
         )
         if (activeCount() == 1) finish() else advance()
+    }
+
+    /** 对决特效展示完毕后清除比牌事件 */
+    fun clearCompareEvent() {
+        _state = _state.copy(lastCompare = null)
     }
 
     fun pot(): Int = _state.stakes.values.sum()

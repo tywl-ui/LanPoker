@@ -2,6 +2,8 @@ package com.lanpoker.app.ui.zjh
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
@@ -201,8 +203,11 @@ private fun QuickTable(
                 if (idx >= 0) idx + 1 else 0
             }
             val slot = quickSlotsFor(players.size).getOrElse(slotIndex) { quickSlotsFor(players.size).first() }
-            val x = (w * slot.x - seatW / 2).coerceAtLeast(0.dp)
-            val y = (h * slot.y - seatH / 2).coerceAtLeast(0.dp)
+            val targetX = (w * slot.x - seatW / 2).coerceAtLeast(0.dp)
+            val targetY = (h * slot.y - seatH / 2).coerceAtLeast(0.dp)
+            // 换位平滑滑动
+            val animX by animateDpAsState(targetValue = targetX, animationSpec = tween(450), label = "seatX")
+            val animY by animateDpAsState(targetValue = targetY, animationSpec = tween(450), label = "seatY")
             QuickSeat(
                 player = p,
                 game = game,
@@ -211,7 +216,7 @@ private fun QuickTable(
                 cardW = cardW,
                 cardH = cardH,
                 overlap = overlap,
-                modifier = Modifier.offset(x = x, y = y),
+                modifier = Modifier.offset(x = animX, y = animY),
             )
         }
 
@@ -259,10 +264,16 @@ private fun QuickSeat(
             Row {
                 hand.forEachIndexed { i, card ->
                     val m = Modifier.offset(x = if (i == 0) 0.dp else overlap)
-                    if (showCards) {
-                        CardFront(card = card, width = cardW, height = cardH, modifier = m)
-                    } else {
-                        CardBack(width = cardW, height = cardH, modifier = m)
+                    Crossfade(
+                        targetState = showCards,
+                        animationSpec = tween(260),
+                        label = "flip",
+                    ) { face ->
+                        if (face) {
+                            CardFront(card = card, width = cardW, height = cardH, modifier = m)
+                        } else {
+                            CardBack(width = cardW, height = cardH, modifier = m)
+                        }
                     }
                 }
             }

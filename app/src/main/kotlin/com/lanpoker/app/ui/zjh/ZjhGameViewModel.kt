@@ -157,6 +157,12 @@ class ZjhGameViewModel(
         state = state.copy(pendingCompare = null)
     }
 
+    /** 对决特效展示完毕，清除比牌事件 */
+    fun dismissCompareShowdown() {
+        state.game.clearCompareEvent()
+        state = state.copy()
+    }
+
     private fun afterAction() {
         val g = state.game
         if (g.state.over) {
