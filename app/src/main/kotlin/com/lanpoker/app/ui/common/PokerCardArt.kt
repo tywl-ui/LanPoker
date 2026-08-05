@@ -2,6 +2,7 @@ package com.lanpoker.app.ui.common
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -22,7 +24,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -42,7 +46,7 @@ private val avatarPalette = listOf(
 
 fun avatarColor(index: Int): Color = avatarPalette[index % avatarPalette.size]
 
-/** 牌面（矢量绘制） */
+/** 牌面：优先用真实图片（assets），加载失败回退矢量绘制 */
 @Composable
 fun CardFront(
     card: Card,
@@ -50,6 +54,27 @@ fun CardFront(
     width: Dp = 64.dp,
     height: Dp = 92.dp,
 ) {
+    val context = LocalContext.current
+    val name = CardImages.fileNameFor(card)
+    val bitmap = remember(name) { name?.let { CardImages.load(context, it) } }
+
+    if (bitmap != null) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF9E9E9E)),
+            shadowElevation = 3.dp,
+            modifier = modifier.size(width, height),
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = card.label,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.size(width, height),
+            )
+        }
+        return
+    }
+
     val color = when (card) {
         is Card.Poker -> if (card.suit == Suit.HEART || card.suit == Suit.DIAMOND) CardRed else CardBlack
         is Card.Joker -> Color(0xFF1E88E5)
@@ -58,6 +83,7 @@ fun CardFront(
         shape = RoundedCornerShape(8.dp),
         color = Color.White,
         border = BorderStroke(1.dp, Color(0xFFBDBDBD)),
+        shadowElevation = 3.dp,
         modifier = modifier.size(width, height),
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -118,7 +144,7 @@ fun CardFront(
     }
 }
 
-/** 牌背（花纹） */
+/** 牌背：优先真实图片（assets），失败回退矢量花纹 */
 @Composable
 fun CardBack(
     modifier: Modifier = Modifier,
@@ -126,6 +152,24 @@ fun CardBack(
     height: Dp = 92.dp,
     dimmed: Boolean = false,
 ) {
+    val context = LocalContext.current
+    val bitmap = remember { CardImages.load(context, "back") }
+    if (bitmap != null && !dimmed) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF9E9E9E)),
+            shadowElevation = 3.dp,
+            modifier = modifier.size(width, height),
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "牌背",
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.size(width, height),
+            )
+        }
+        return
+    }
     val base = if (dimmed) Color(0xFF757575) else Color(0xFF1565C0)
     val accent = if (dimmed) Color(0xFF9E9E9E) else Color(0xFF64B5F6)
     Box(
@@ -135,6 +179,7 @@ fun CardBack(
             shape = RoundedCornerShape(8.dp),
             color = base,
             border = BorderStroke(1.dp, if (dimmed) Color(0xFF616161) else Color(0xFF0D47A1)),
+            shadowElevation = 3.dp,
             modifier = Modifier.size(width, height),
         ) {
             Canvas(modifier = Modifier.size(width, height)) {
@@ -246,7 +291,7 @@ fun Avatar(
     }
 }
 
-/** 牌桌背景：墨绿毡布 + 径向光晕 */
+/** 牌桌背景：墨绿毡布 + 径向光晕 + 木色桌边 + 金色内环 */
 @Composable
 fun TableBackground(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
@@ -258,18 +303,38 @@ fun TableBackground(modifier: Modifier = Modifier) {
         // 中央径向光晕
         val cx = size.width / 2f
         val cy = size.height * 0.42f
+        val r = size.minDimension * 0.52f
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(Color(0xFF2E7D32).copy(alpha = 0.55f), Color.Transparent),
             ),
-            radius = size.minDimension * 0.55f,
+            radius = r,
             center = Offset(cx, cy),
         )
-        // 桌边描边
+        // 木色桌边（外环）
         drawCircle(
-            color = Color(0xFF0A2F1C),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6.dp.toPx()),
-            radius = size.minDimension * 0.47f,
+            color = Color(0xFF6D4C41),
+            radius = size.minDimension * 0.50f,
+            center = Offset(cx, cy),
+        )
+        // 桌内绿毡
+        drawCircle(
+            color = Color(0xFF14532D),
+            radius = size.minDimension * 0.46f,
+            center = Offset(cx, cy),
+        )
+        // 金色内环
+        drawCircle(
+            color = Gold.copy(alpha = 0.65f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()),
+            radius = size.minDimension * 0.46f,
+            center = Offset(cx, cy),
+        )
+        // 桌边高光
+        drawCircle(
+            color = Color(0xFF8D6E63).copy(alpha = 0.5f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
+            radius = size.minDimension * 0.498f,
             center = Offset(cx, cy),
         )
     }

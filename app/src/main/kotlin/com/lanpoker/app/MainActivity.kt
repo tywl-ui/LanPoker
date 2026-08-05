@@ -10,6 +10,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.lanpoker.app.ai.AiEngine
 import com.lanpoker.app.ai.AiPrefs
+import com.lanpoker.app.sound.SoundFx
 import com.lanpoker.app.ui.config.ConfigScreen
 import com.lanpoker.app.ui.config.GameMode
 import com.lanpoker.app.ui.rules.RulesScreen
@@ -24,6 +25,7 @@ import com.lanpoker.core.zjh.ZjhRules
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SoundFx.init(applicationContext)
         setContent {
             LanPokerTheme {
                 // 注意：Session 含 GameConfig（不可序列化），不能用 rememberSaveable，否则进程重建时崩溃

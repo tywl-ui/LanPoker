@@ -48,8 +48,12 @@ class AiSettingsViewModel : ViewModel() {
         return withContext(Dispatchers.IO) {
             try {
                 val client = LlmClient(cfg)
-                val reply = client.chat("你是一个测试助手", "只回复：OK")
-                if (reply.isNullOrBlank()) "连上了但响应异常（模型名是否正确？）" else null
+                val result = client.chatDetailed("你是一个测试助手", "只回复：OK")
+                when {
+                    result.content != null -> null
+                    result.error != null -> "失败：${result.error}"
+                    else -> "连接失败"
+                }
             } catch (e: Exception) {
                 e.message ?: "连接失败"
             }

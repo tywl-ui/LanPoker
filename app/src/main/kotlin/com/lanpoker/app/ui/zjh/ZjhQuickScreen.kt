@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lanpoker.app.ai.AiEngine
+import com.lanpoker.app.sound.SoundFx
 import com.lanpoker.app.ui.common.Avatar
 import com.lanpoker.app.ui.common.CardBack
 import com.lanpoker.app.ui.common.CardFront
@@ -95,6 +97,15 @@ fun ZjhQuickScreen(
     val game = state.game
     var showBill by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
+
+    // 音效：发牌 / 选择 / 结算
+    LaunchedEffect(state.round) { SoundFx.play("deal") }
+    LaunchedEffect(state.game.state.chosen.size) {
+        if (state.game.state.chosen.isNotEmpty()) SoundFx.play("tick")
+    }
+    LaunchedEffect(state.phase) {
+        if (state.phase == QuickPhase.REVEAL) SoundFx.play("win")
+    }
 
     if (showExitConfirm) {
         AlertDialog(

@@ -15,11 +15,15 @@ import java.net.URL
 class LlmClient(
     private val config: AiConfig,
 ) {
-    suspend fun chat(system: String, prompt: String): String? = withContext(Dispatchers.IO) {
-        // 容错：用户可能粘贴了带 /v1 或完整 /chat/completions 的地址
+    /** 调用结果：content 为模型回答；error 为失败原因（HTTP 状态码 + 响应摘要） */
+    data class ChatResult(val content: String?, val error: String?)
+
+    suspend fun chat(system: String, prompt: String): String? = chatDetailed(system, prompt).content
+
+    suspend fun chatDetailed(system: String, prompt: String): ChatResult = withContext(Dispatchers.IO) {
+        // 只去掉用户粘贴的完整 /chat/completions 后缀；/v1 必须保留（OpenAI 官方接口必需）
         var base = config.baseUrl.trim().trimEnd('/')
         base = base.removeSuffix("/chat/completions")
-        base = base.removeSuffix("/v1")
         val url = URL("$base/chat/completions")
         val body = buildString {
             append("{\"model\":\"").append(escape(config.model))
@@ -40,9 +44,14 @@ class LlmClient(
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { it.readText() }
             conn.disconnect()
-            extractContent(text)
+            if (code !in 200..299) {
+                ChatResult(null, "HTTP $code：${text.trim().take(200)}")
+            } else {
+                val content = extractContent(text)
+                ChatResult(content, if (content == null) "响应里没有找到内容字段" else null)
+            }
         } catch (e: Exception) {
-            null
+            ChatResult(null, e.message ?: "网络连接失败")
         }
     }
 

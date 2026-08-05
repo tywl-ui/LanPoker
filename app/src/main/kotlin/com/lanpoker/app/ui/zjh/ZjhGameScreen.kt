@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lanpoker.app.ai.AiEngine
+import com.lanpoker.app.sound.SoundFx
 import com.lanpoker.app.ui.common.Avatar
 import com.lanpoker.app.ui.common.CardBack
 import com.lanpoker.app.ui.common.CardFront
@@ -106,6 +108,16 @@ fun ZjhGameScreen(
     var showCompare by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
 
+    // 音效：发牌 / 动作 / 结算
+    LaunchedEffect(state.round) { SoundFx.play("deal") }
+    LaunchedEffect(state.game.state.lastAction) {
+        val action = state.game.state.lastAction
+        SoundFx.playForAction(action)
+    }
+    LaunchedEffect(state.phase) {
+        if (state.phase == Phase.SETTLED) SoundFx.play("win")
+    }
+
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
@@ -146,10 +158,12 @@ fun ZjhGameScreen(
         )
     }
     state.pendingCompare?.let { pc ->
+        val targetIdx = viewModel.players.indexOfFirst { it.id == pc.targetId }
         TransformDialog(
             title = if (pc.isTargetPick) "对方有王：选一个能赢过的牌型" else "你有王：先选你的牌型",
             options = pc.options,
             isTargetPick = pc.isTargetPick,
+            realHand = if (pc.isTargetPick && targetIdx >= 0) game.hands.getOrNull(targetIdx) else null,
             onPick = viewModel::onTransformPicked,
             onCancel = viewModel::cancelPendingCompare,
         )
@@ -615,6 +629,7 @@ private fun TransformDialog(
     title: String,
     options: List<com.lanpoker.core.zjh.ZjhHand>,
     isTargetPick: Boolean,
+    realHand: List<Card>?,
     onPick: (com.lanpoker.core.zjh.ZjhHand) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -625,9 +640,22 @@ private fun TransformDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(360.dp)
+                    .height(420.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
+                if (realHand != null) {
+                    Text(
+                        "你的手牌：",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        realHand.forEach { card ->
+                            CardFront(card = card, width = 36.dp, height = 50.dp)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
                 Text(
                     "王可以临时变成其他牌，选一个定型",
                     style = MaterialTheme.typography.bodySmall,

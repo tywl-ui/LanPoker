@@ -198,13 +198,13 @@ class ZjhBettingGame(
         if (targetId !in jokerPlayers) {
             val tHand = bestEval.getValue(targetId)
             val loser = if (ZjhEvaluator.compare(cHand, tHand) <= 0) id else targetId
-            applyCompareOutcome(id, targetId, cHand, tHand, loser)
+            applyCompareOutcome(id, targetId, tHand, loser)
             return CompareResult(CompareStep.RESOLVED, loserId = loser)
         }
         // 对方有王：在「能赢过所选牌型」的范围内选
         val wins = transforms.getValue(targetId).filter { ZjhEvaluator.compare(it, cHand) > 0 }
         if (wins.isEmpty()) {
-            applyCompareOutcome(id, targetId, cHand, null, loser = targetId)
+            applyCompareOutcome(id, targetId, null, loser = targetId)
             return CompareResult(CompareStep.RESOLVED, loserId = targetId)
         }
         return CompareResult(CompareStep.AWAITING_TARGET, targetOptions = wins)
@@ -217,7 +217,7 @@ class ZjhBettingGame(
         if (targetId !in jokerPlayers || targetHand !in transforms.getValue(targetId)) return false
         val cHand = _state.jokerLock[id] ?: bestEval.getValue(id)
         if (ZjhEvaluator.compare(targetHand, cHand) <= 0) return false
-        applyCompareOutcome(id, targetId, cHand, targetHand, loser = id)
+        applyCompareOutcome(id, targetId, targetHand, loser = id)
         return true
     }
 
@@ -228,20 +228,23 @@ class ZjhBettingGame(
     }
 
     /** 比牌双方各付比牌费并淘汰输家 */
-    private fun applyCompareOutcome(id: Int, targetId: Int, cHand: ZjhHand, tHand: ZjhHand?, loser: Int) {
+    private fun applyCompareOutcome(id: Int, targetId: Int, tHand: ZjhHand?, loser: Int) {
         val fee = requiredBase(id) * base
         val feeTarget = requiredBase(targetId) * base
-        val lock = if (tHand != null) _state.jokerLock + (targetId to tHand) else _state.jokerLock
+        // 只有王玩家才锁定选定的牌型
+        val lock = if (tHand != null && targetId in jokerPlayers) {
+            _state.jokerLock + (targetId to tHand)
+        } else {
+            _state.jokerLock
+        }
         _state = _state.copy(
             stakes = _state.stakes
                 .plus(id to stakeOf(id) + fee)
                 .plus(targetId to stakeOf(targetId) + feeTarget),
             folded = _state.folded + loser,
             jokerLock = lock,
-            lastAction = when (loser) {
-                id -> "${name(id)} 与 ${name(targetId)} 比牌，${name(id)} 输（${labelFor(targetId, tHand)}）"
-                else -> "${name(id)} 与 ${name(targetId)} 比牌，${name(targetId)} 输（${labelFor(id, cHand)}）"
-            },
+            // 日志只报谁输，不亮出双方牌面（牌面由结算页展示赢家）
+            lastAction = "${name(id)} 与 ${name(targetId)} 比牌，${name(loser)} 输",
         )
         if (activeCount() == 1) finish() else advance()
     }
