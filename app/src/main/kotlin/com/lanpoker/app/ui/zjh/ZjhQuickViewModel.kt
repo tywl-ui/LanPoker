@@ -55,8 +55,45 @@ class ZjhQuickViewModel(
     var state by mutableStateOf(newRound())
         private set
 
+    // ---------- 回合倒计时 ----------
+    private val humanTurnSeconds = 15
+    private val aiTurnSeconds = 5
+    private var timerJob: kotlinx.coroutines.Job? = null
+    var turnSecondsLeft by mutableStateOf(0)
+        private set
+
+    private fun startTurnTimer(total: Int) {
+        timerJob?.cancel()
+        turnSecondsLeft = total
+        timerJob = viewModelScope.launch {
+            while (turnSecondsLeft > 0) {
+                delay(1000)
+                turnSecondsLeft--
+            }
+            onTurnTimerExpired()
+        }
+    }
+
+    private fun onTurnTimerExpired() {
+        if (state.phase != QuickPhase.CHOOSE) return
+        val c = state.game.currentChooser ?: return
+        if (c.id in aiIds) return
+        autoAct()
+    }
+
+    private fun startTurnTimerIfNeeded() {
+        if (state.phase != QuickPhase.CHOOSE || state.game.allChosen) {
+            timerJob?.cancel()
+            turnSecondsLeft = 0
+            return
+        }
+        val c = state.game.currentChooser ?: return
+        startTurnTimer(if (c.id in aiIds) aiTurnSeconds else humanTurnSeconds)
+    }
+
     init {
         // 首回合可能是 AI：进场立即驱动 AI 选择，否则人机快局会卡死
+        startTurnTimerIfNeeded()
         runAiIfNeeded()
     }
 
@@ -113,8 +150,11 @@ class ZjhQuickViewModel(
     private fun afterChoose() {
         val g = state.game
         if (g.allChosen) {
+            timerJob?.cancel()
+            turnSecondsLeft = 0
             settle()
         } else {
+            startTurnTimerIfNeeded()
             runAiIfNeeded()
         }
     }
@@ -128,7 +168,11 @@ class ZjhQuickViewModel(
                 val c = state.game.currentChooser ?: break
                 if (c.id !in aiIds) break
                 if (state.game.allChosen) break
-                delay(1000)
+                // AI 倒计时：等思考时间走完再选择
+                startTurnTimer(aiTurnSeconds)
+                while (turnSecondsLeft > 0) {
+                    delay(100)
+                }
                 val hand = ZjhEvaluator.evaluate(state.game.hands[players.indexOf(c)], rules)
                 val snapshot = AiEngine.Companion.ZjhQuickSnapshot(
                     others = players.filter { it.id != c.id }.map { p ->
@@ -164,7 +208,9 @@ class ZjhQuickViewModel(
     }
 
     fun nextRound() {
+        timerJob?.cancel()
         state = newRound()
+        startTurnTimerIfNeeded()
         runAiIfNeeded()
     }
 

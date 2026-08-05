@@ -178,6 +178,8 @@ class ZjhGameViewModel(
     private fun afterAction() {
         val g = state.game
         if (g.state.over) {
+            timerJob?.cancel()
+            turnSecondsLeft = 0
             val result = ledger.settleRound(
                 winnerId = g.state.winnerId,
                 winnerHandLabel = g.state.winnerLabel,
@@ -192,12 +194,55 @@ class ZjhGameViewModel(
             )
         } else {
             state = state.copy(showMyCards = false)
+            startTurnTimerIfNeeded()
             runAiIfNeeded()
         }
     }
 
     /** 防止 AI 循环重复启动（比牌结算路径会触发 runAiIfNeeded） */
     private var aiLoopActive = false
+
+    // ---------- 回合倒计时 ----------
+    /** 真人每回合思考秒数 */
+    private val humanTurnSeconds = 20
+    /** AI 每回合思考秒数（AI 也要"花时间"，观感更真实） */
+    private val aiTurnSeconds = 5
+    private var timerJob: kotlinx.coroutines.Job? = null
+    var turnSecondsLeft by mutableStateOf(0)
+        private set
+
+    private fun startTurnTimer(total: Int) {
+        timerJob?.cancel()
+        turnSecondsLeft = total
+        timerJob = viewModelScope.launch {
+            while (turnSecondsLeft > 0) {
+                delay(1000)
+                turnSecondsLeft--
+            }
+            onTurnTimerExpired()
+        }
+    }
+
+    /** 计时结束：真人回合超时自动跟注；AI 由循环自行推进 */
+    private fun onTurnTimerExpired() {
+        val g = state.game
+        if (state.phase != Phase.BETTING || g.state.over) return
+        if (state.pendingCompare != null || g.state.lastCompare != null) return
+        val id = g.state.turn
+        if (id in aiIds) return
+        autoAct()
+    }
+
+    /** 回合切换后启动对应计时器 */
+    private fun startTurnTimerIfNeeded() {
+        if (state.phase != Phase.BETTING || state.game.state.over) {
+            timerJob?.cancel()
+            turnSecondsLeft = 0
+            return
+        }
+        val id = state.game.state.turn
+        startTurnTimer(if (id in aiIds) aiTurnSeconds else humanTurnSeconds)
+    }
 
     /** 轮到 AI 时自动决策（AI 连打直到轮到真人或结束） */
     private fun runAiIfNeeded() {
@@ -214,7 +259,11 @@ class ZjhGameViewModel(
                     if (s.over) break
                     if (s.turn !in aiIds) break
                     if (state.pendingCompare != null) break
-                    delay(1100)
+                    // AI 倒计时：等思考时间走完再行动
+                    startTurnTimer(aiTurnSeconds)
+                    while (turnSecondsLeft > 0) {
+                        delay(100)
+                    }
                     val id = s.turn
                     val hand = state.game.handOf(id)
                     val decision = engine.decideBetting(
@@ -269,7 +318,9 @@ class ZjhGameViewModel(
     }
 
     fun nextRound() {
+        timerJob?.cancel()
         state = newRoundState()
+        startTurnTimerIfNeeded()
         runAiIfNeeded()
     }
 

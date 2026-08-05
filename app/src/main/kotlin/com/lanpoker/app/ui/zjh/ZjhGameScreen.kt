@@ -74,6 +74,7 @@ import com.lanpoker.app.ui.common.Avatar
 import com.lanpoker.app.ui.common.CardBack
 import com.lanpoker.app.ui.common.CardFront
 import com.lanpoker.app.ui.common.ChipStack
+import com.lanpoker.app.ui.common.CountdownRing
 import com.lanpoker.app.ui.common.Gold
 import com.lanpoker.app.ui.common.TableBackground
 import com.lanpoker.core.config.GameConfig
@@ -191,21 +192,8 @@ fun ZjhGameScreen(
         }
     }
 
-    // 真人回合倒计时（对决特效/选型弹窗期间暂停）
-    var secondsLeft by remember { mutableStateOf(20) }
-    val turnKey = state.game.state.turn
+    // 真人回合倒计时由 ViewModel 统一管理（AI 回合也有思考倒计时）
     val paused = state.pendingCompare != null || compareEvent != null
-    LaunchedEffect(turnKey, paused, state.phase) {
-        if (state.phase != Phase.BETTING || paused) return@LaunchedEffect
-        val actor = viewModel.players.firstOrNull { it.id == turnKey }
-        if (actor == null || actor.id in aiIds) return@LaunchedEffect
-        secondsLeft = 20
-        while (secondsLeft > 0) {
-            delay(1000)
-            secondsLeft--
-        }
-        viewModel.autoAct()
-    }
     if (compareEvent != null && state.phase == Phase.BETTING) {
         val challenger = viewModel.players.firstOrNull { it.id == compareEvent.challengerId }
         val target = viewModel.players.firstOrNull { it.id == compareEvent.targetId }
@@ -275,7 +263,9 @@ fun ZjhGameScreen(
                     TableArea(
                         game = game,
                         players = viewModel.players,
+                        aiIds = aiIds,
                         showMyCards = state.showMyCards,
+                        turnSecondsLeft = viewModel.turnSecondsLeft,
                         round = state.round,
                     )
                 }
@@ -286,7 +276,7 @@ fun ZjhGameScreen(
                 players = viewModel.players,
                 aiIds = aiIds,
                 showMyCards = state.showMyCards,
-                secondsLeft = secondsLeft,
+                secondsLeft = viewModel.turnSecondsLeft,
                 paused = paused,
                 onLook = viewModel::look,
                 onHide = viewModel::hideCards,
@@ -305,7 +295,9 @@ fun ZjhGameScreen(
 private fun TableArea(
     game: ZjhBettingGame,
     players: List<Player>,
+    aiIds: Set<Int>,
     showMyCards: Boolean,
+    turnSecondsLeft: Int,
     round: Int,
 ) {
     val gs = game.state
@@ -346,16 +338,13 @@ private fun TableArea(
             }
         }
 
-        // 桌子中心：底池
+        // 桌子中心：底池 + 倒计时环
+        val turnIsAi = gs.turn in aiIds
         Column(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(
-                shape = CircleShape,
-                color = Color(0xFF0B3D24).copy(alpha = 0.9f),
-                border = BorderStroke(2.dp, Color(0xFF2E7D32)),
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -366,6 +355,15 @@ private fun TableArea(
                         "第 ${gs.bettingRounds + 1} 轮下注${if (!game.canCompare()) " · 比牌需满3轮" else ""}",
                         color = Color.White.copy(alpha = 0.75f),
                         style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                if (!gs.over) {
+                    CountdownRing(
+                        secondsLeft = turnSecondsLeft,
+                        total = if (turnIsAi) 5 else 20,
+                        label = if (turnIsAi) "AI 思考" else "你的回合",
+                        size = 62.dp,
                     )
                 }
             }

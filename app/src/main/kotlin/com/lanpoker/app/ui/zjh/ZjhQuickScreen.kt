@@ -60,6 +60,7 @@ import com.lanpoker.app.ui.common.ActionBanner
 import com.lanpoker.app.ui.common.Avatar
 import com.lanpoker.app.ui.common.CardBack
 import com.lanpoker.app.ui.common.CardFront
+import com.lanpoker.app.ui.common.CountdownRing
 import com.lanpoker.app.ui.common.Gold
 import com.lanpoker.app.ui.common.TableBackground
 import com.lanpoker.core.config.GameConfig
@@ -109,21 +110,6 @@ fun ZjhQuickScreen(
     }
     LaunchedEffect(state.phase) {
         if (state.phase == QuickPhase.REVEAL) SoundFx.play("win")
-    }
-
-    // 真人回合倒计时（看牌展示期间暂停）
-    var secondsLeft by remember { mutableStateOf(15) }
-    val chooserId = state.game.currentChooser?.id
-    LaunchedEffect(chooserId, state.showMyCards, state.phase) {
-        if (state.phase != QuickPhase.CHOOSE || state.showMyCards) return@LaunchedEffect
-        val c = state.game.currentChooser ?: return@LaunchedEffect
-        if (c.id in aiIds) return@LaunchedEffect
-        secondsLeft = 15
-        while (secondsLeft > 0) {
-            delay(1000)
-            secondsLeft--
-        }
-        viewModel.autoAct()
     }
 
     if (showExitConfirm) {
@@ -187,14 +173,20 @@ fun ZjhQuickScreen(
                         onBill = { showBill = true },
                     )
                 } else {
-                    QuickTable(game, viewModel.players, state.showMyCards)
+                    QuickTable(
+                        game,
+                        viewModel.players,
+                        aiIds,
+                        state.showMyCards,
+                        viewModel.turnSecondsLeft,
+                    )
                 }
             }
 
             QuickActionBar(
                 state = state,
                 aiIds = aiIds,
-                secondsLeft = secondsLeft,
+                secondsLeft = viewModel.turnSecondsLeft,
                 onChoose = viewModel::choose,
             )
         }
@@ -205,7 +197,9 @@ fun ZjhQuickScreen(
 private fun QuickTable(
     game: ZjhQuickGame,
     players: List<Player>,
+    aiIds: Set<Int>,
     showMyCards: Boolean,
+    turnSecondsLeft: Int,
 ) {
     val gs = game.state
     val chooser = game.currentChooser
@@ -252,6 +246,17 @@ private fun QuickTable(
                 color = Color.White.copy(alpha = 0.85f),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Spacer(Modifier.height(8.dp))
+            if (!game.allChosen) {
+                val chooser = game.currentChooser
+                val isAi = chooser != null && chooser.id in aiIds
+                CountdownRing(
+                    secondsLeft = turnSecondsLeft,
+                    total = if (isAi) 5 else 15,
+                    label = if (isAi) "AI 思考" else "你的回合",
+                    size = 62.dp,
+                )
+            }
         }
     }
 }
