@@ -98,37 +98,44 @@ class ZjhGameViewModel(
         if (state.game.fold()) afterAction()
     }
 
-    fun compare(targetId: Int) {
+    /** @return 比牌是否有效发起（可能等待对方选型） */
+    fun compare(targetId: Int): Boolean {
         val g = state.game
         val id = g.state.turn
-        if (!g.hasJoker(id)) {
-            beginCompareFlow(targetId, null)
-            return
-        }
+        if (!g.hasJoker(id)) return beginCompareFlow(targetId, null)
         // 有王：先自选牌型（AI 自动选最强，真人弹窗选）
         val options = g.transformsOf(id)
         if (id in aiIds) {
             val pick = options.maxWithOrNull(Comparator { a, b -> ZjhEvaluator.compare(a, b) })
-            if (pick != null) beginCompareFlow(targetId, pick)
+            return if (pick != null) beginCompareFlow(targetId, pick) else false
         } else {
             state = state.copy(pendingCompare = PendingCompare(targetId, options, isTargetPick = false))
+            return true
         }
     }
 
-    private fun beginCompareFlow(targetId: Int, challengerHand: ZjhHand?) {
+    private fun beginCompareFlow(targetId: Int, challengerHand: ZjhHand?): Boolean {
         val g = state.game
-        val result = g.beginCompare(targetId, challengerHand) ?: return
-        when (result.step) {
-            ZjhBettingGame.CompareStep.RESOLVED -> afterAction()
+        val result = g.beginCompare(targetId, challengerHand) ?: return false
+        return when (result.step) {
+            ZjhBettingGame.CompareStep.RESOLVED -> {
+                afterAction()
+                true
+            }
             ZjhBettingGame.CompareStep.AWAITING_TARGET -> {
                 // 防守方有王：AI 自动选最强能赢的，真人弹窗
                 if (targetId in aiIds) {
                     val pick = result.targetOptions.maxWithOrNull(Comparator { a, b -> ZjhEvaluator.compare(a, b) })
-                    if (pick != null && g.finalizeCompare(targetId, pick)) afterAction()
+                    if (pick != null && g.finalizeCompare(targetId, pick)) {
+                        afterAction()
+                        return true
+                    }
+                    false
                 } else {
                     state = state.copy(
                         pendingCompare = PendingCompare(targetId, result.targetOptions, isTargetPick = true),
                     )
+                    true
                 }
             }
         }
@@ -229,7 +236,6 @@ class ZjhGameViewModel(
             AiActionType.COMPARE -> {
                 val t = d.targetId ?: return false
                 compare(t)
-                true
             }
         }
     }

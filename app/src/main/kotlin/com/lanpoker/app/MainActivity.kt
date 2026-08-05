@@ -12,6 +12,7 @@ import com.lanpoker.app.ai.AiEngine
 import com.lanpoker.app.ai.AiPrefs
 import com.lanpoker.app.ui.config.ConfigScreen
 import com.lanpoker.app.ui.config.GameMode
+import com.lanpoker.app.ui.rules.RulesScreen
 import com.lanpoker.app.ui.settings.AiSettingsScreen
 import com.lanpoker.app.ui.theme.LanPokerTheme
 import com.lanpoker.app.ui.zjh.ZjhGameScreen
@@ -28,15 +29,18 @@ class MainActivity : ComponentActivity() {
                 // 注意：Session 含 GameConfig（不可序列化），不能用 rememberSaveable，否则进程重建时崩溃
                 var session by remember { mutableStateOf<Session?>(null) }
                 var showAiSettings by rememberSaveable { mutableStateOf(false) }
+                var showRules by rememberSaveable { mutableStateOf(false) }
 
                 val current = session
                 when {
+                    showRules -> RulesScreen(onBack = { showRules = false })
                     showAiSettings -> AiSettingsScreen(onBack = { showAiSettings = false })
                     current == null -> ConfigScreen(
                         onStart = { config, mode, aiCount, names, rules, tieRule ->
                             session = Session(config, mode, aiCount, names, rules, tieRule)
                         },
                         onOpenAiSettings = { showAiSettings = true },
+                        onOpenRules = { showRules = true },
                     )
                     else -> {
                         // 保险：AI 数量最多 = 人数 - 1

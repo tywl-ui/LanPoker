@@ -52,6 +52,7 @@ enum class GameMode(val label: String, val desc: String) {
 fun ConfigScreen(
     onStart: (GameConfig, GameMode, Int, List<String>, ZjhRules, TieRule) -> Unit,
     onOpenAiSettings: () -> Unit,
+    onOpenRules: () -> Unit,
 ) {
     var gameType by remember { mutableStateOf(GameType.ZJH) }
     var mode by remember { mutableStateOf(GameMode.FRIENDS) }
@@ -246,6 +247,11 @@ fun ConfigScreen(
         ) {
             Text("开始游戏", style = MaterialTheme.typography.titleMedium)
         }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = onOpenRules,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("玩法规则（牌型 / 下注 / 王）") }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = onOpenAiSettings,
