@@ -111,7 +111,7 @@ class ZjhQuickViewModel(
                 if (c.id !in aiIds) break
                 if (state.game.allChosen) break
                 delay(1000)
-                val hand = ZjhEvaluator.evaluate(state.game.hands[players.indexOf(c)])
+                val hand = ZjhEvaluator.evaluate(state.game.hands[players.indexOf(c)], rules)
                 val snapshot = AiEngine.Companion.ZjhQuickSnapshot(
                     others = players.filter { it.id != c.id }.map { p ->
                         p.name to state.game.state.chosen[p.id]?.let { it != config.baseScore }

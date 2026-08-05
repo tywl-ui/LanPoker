@@ -72,6 +72,7 @@ fun ConfigScreen(
     fun onPlayerCountChanged(newCount: Int) {
         playerCount = newCount
         names = List(newCount) { i -> names.getOrElse(i) { "玩家${i + 1}" } }
+        aiCount = aiCount.coerceAtMost(newCount - 1)
     }
 
     Column(
@@ -230,7 +231,7 @@ fun ConfigScreen(
                 onStart(
                     config,
                     mode,
-                    aiCount,
+                    aiCount.coerceAtMost(maxAi),
                     names.map { it.trim() },
                     ZjhRules(rule235EatsTriple = rule235),
                     tieRule,

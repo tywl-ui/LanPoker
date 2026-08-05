@@ -39,7 +39,9 @@ class MainActivity : ComponentActivity() {
                         onOpenAiSettings = { showAiSettings = true },
                     )
                     else -> {
-                        val aiIds = (1..current.aiCount).toSet()
+                        // 保险：AI 数量最多 = 人数 - 1
+                        val aiIds = if (current.aiCount <= 0) emptySet()
+                        else (1..minOf(current.aiCount, current.config.playerCount - 1)).toSet()
                         val aiEngine = AiEngine(AiPrefs.load(this))
                         when (current.mode) {
                             GameMode.FRIENDS -> ZjhGameScreen(
